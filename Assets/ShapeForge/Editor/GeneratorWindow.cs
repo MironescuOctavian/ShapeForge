@@ -325,7 +325,7 @@ namespace MilltinaBreastGenerator
                     float actionWidth = Mathf.Max(90f, (position.width - 36f) * .32f);
                     var previousColor = GUI.backgroundColor;
 
-                    bool openPreview = GUILayout.Button(new GUIContent("Open Fit Editor", "See the fit and make local corrections before saving."), GUILayout.Height(34), GUILayout.Width(actionWidth));
+                    bool openPreview = GUILayout.Button(new GUIContent("Edit", "See the fit and make local corrections before saving."), GUILayout.Height(34), GUILayout.Width(actionWidth));
 
                     if (openPreview)
                         FitPreview.Open(body, selected.Select(p => p.Renderer).ToArray(), sourceShapeName, transferMethod);
@@ -485,7 +485,7 @@ namespace MilltinaBreastGenerator
                         bool included = piece.CanGenerate && !uncheckedPieces.Contains(piece.Renderer);
                         using (new EditorGUI.DisabledScope(!piece.CanGenerate))
                         {
-                            if (EditorGUILayout.Toggle(new GUIContent("", "Include this piece when you open the Fit Editor or click Generate."), included, GUILayout.Width(18)) != included)
+                            if (EditorGUILayout.Toggle(new GUIContent("", "Include this piece when you click Edit or Generate."), included, GUILayout.Width(18)) != included)
                             {
                                 if (included)
                                     uncheckedPieces.Add(piece.Renderer);
