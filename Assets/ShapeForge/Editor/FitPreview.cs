@@ -44,8 +44,6 @@ namespace MilltinaBreastGenerator
         private Vector3[] strokeSmooth;
         private bool sculpt;
         private float vertexSize = 4;
-        private static readonly string[] ClipScopes = { "Visible outfit", "Selected mesh" };
-        private bool selectedClipping;
         private bool showClipMarkers = true;
         private bool leftSide;
         private float brushRadius = .015f;
@@ -386,9 +384,6 @@ namespace MilltinaBreastGenerator
             }
             using (new EditorGUILayout.HorizontalScope())
             {
-                GUILayout.Label("Clipping scope", EditorStyles.whiteMiniLabel, GUILayout.Width(77));
-                using (new EditorGUI.DisabledScope(clippingWork != null))
-                    selectedClipping = EditorGUILayout.Popup(selectedClipping ? 1 : 0, ClipScopes, GUILayout.Width(118)) == 1;
                 showClipMarkers = EditorGUILayout.ToggleLeft("Show markers", showClipMarkers, GUILayout.Width(106));
             }
             if (!string.IsNullOrEmpty(status))
@@ -551,7 +546,7 @@ namespace MilltinaBreastGenerator
                 }
             }
             if (OverlayButton(new GUIContent(clippingWork == null ? "◉  Check Clipping" : "Cancel Check",
-                "Check the visible layers in the background. Existing body clipping appears in gray.")))
+                "Check the selected mesh against the body and visible garments. Existing body clipping appears in gray.")))
             {
                 if (clippingWork == null)
                     CheckClipping();
@@ -1720,8 +1715,10 @@ namespace MilltinaBreastGenerator
         private void CheckClipping()
         {
             ClearClipping();
-            status = selectedClipping ? "Checking selected mesh against the body…" : "Checking visible outfit…";
-            clippingWork = ScanClipping().GetEnumerator();
+            int selected = selectedMesh + 1;
+            if (selected >= pieces.Count) return;
+            status = $"Checking {pieces[selected].Source.name}…";
+            clippingWork = ScanClipping(selected).GetEnumerator();
             Repaint();
         }
 
@@ -1750,7 +1747,7 @@ namespace MilltinaBreastGenerator
             }
         }
 
-        private IEnumerable<int> ScanClipping()
+        private IEnumerable<int> ScanClipping(int selected)
         {
             float reach = size * .15f;
             float threshold = Mathf.Max(.0001f, size * .001f);
@@ -1761,7 +1758,7 @@ namespace MilltinaBreastGenerator
             for (int i = 0; i < pieces.Count; i++)
             {
                 var piece = pieces[i];
-                if (!IsVisible(piece) || (selectedClipping && i != 0 && i != selectedMesh + 1) || piece.Faces.Length == 0)
+                if (!IsVisible(piece) || piece.Faces.Length == 0)
                     continue;
                 surfaces[i] = PickSurface(piece);
                 var toWorld = piece.Renderer.localToWorldMatrix;
@@ -1823,7 +1820,7 @@ namespace MilltinaBreastGenerator
                     var ray = new Ray(points[a], edge / length);
                     for (int other = 0; other < surfaces.Length; other++)
                     {
-                        if (other == i || surfaces[other] == null ||
+                        if (other == i || (i != selected && other != selected) || surfaces[other] == null ||
                             !surfaces[other].Raycast(ray, length, 0, out _, out float hit) || hit <= threshold || length - hit <= threshold) continue;
                         if (prior.sqrMagnitude > 0 && rest[other].Raycast(new Ray(authored[a], prior.normalized), prior.magnitude, 0, out _, out _)) continue;
                         var point = ray.GetPoint(hit);
@@ -1837,7 +1834,7 @@ namespace MilltinaBreastGenerator
                 {
                     for (int other = 0; other < surfaces.Length; other++)
                     {
-                        if (other == i || surfaces[other] == null ||
+                        if (other == i || (i != selected && other != selected) || surfaces[other] == null ||
                             !surfaces[other].FindClosest(point, reach, out var face, out _, out var offset))
                             continue;
                         var normal = surfaces[other].Normal(face) * winding[other];
@@ -1866,8 +1863,7 @@ namespace MilltinaBreastGenerator
                 }
             }
 
-            string scope = selectedClipping || isolateMesh ? "selected mesh and body" : "visible outfit";
-            status = $"{found} contact samples at {weight:g}% ({scope}) · Red: body · Orange: garment · Gray: present at Fit 0";
+            status = $"{pieces[selected].Source.name}: {found} contact samples at {weight:g}% · Red: body · Orange: garment · Gray: present at Fit 0";
             if (found > markerLimit) status += $" · Showing {markerLimit} markers";
         }
 
