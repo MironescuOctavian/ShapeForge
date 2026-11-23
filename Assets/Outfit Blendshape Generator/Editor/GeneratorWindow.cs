@@ -352,7 +352,18 @@ namespace MilltinaBreastGenerator
                     GUI.backgroundColor = previousColor;
                     if (generate)
                     {
-                        var fit = new LayerFit(body, selected.Select(p => p.Renderer).ToArray(), sourceShapeName, transferMethod, referenceMode);
+                        LayerFit fit;
+                        try
+                        {
+                            fit = new LayerFit(body, selected.Select(p => p.Renderer).ToArray(), sourceShapeName, transferMethod, referenceMode);
+                        }
+                        catch (InvalidOperationException exception)
+                        {
+                            summary = exception.Message;
+                            summaryType = MessageType.Error;
+                            GUIUtility.ExitGUI();
+                            return;
+                        }
                         Run("Generate ShapeForge Blendshape", "Generated", selected, r => GeneratorAssets.Generate(r, body, avatarRoot, fit: fit, shape: sourceShapeName));
                     }
                 }
