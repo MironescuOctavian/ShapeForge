@@ -15,3 +15,23 @@ The following SHA-256 fingerprints identify the inspected complete local package
 - ModularAvatarSync.cs  4DF82E041DB47A2964AD1F695815AC2B416DD45AE9D7FAF34A7F39A20D0FA88A
 - ShapeTransfer.cs  CDCECC81ADE5E81305FCEBC4C4EB657C65BE7E2915BD85C4EEEFAFF471F5435C
 - TransferField.cs  5939A01723C3814C3634B94CB30B95287FC415FF6C9C6E8BBCA28FCB44EEE5DF
+
+## Phase 2 delivery · 2026-11-23
+
+The user confirmed the complete local Outfit Blendshape Generator folder as authoritative. Development continued locally after GitHub HTTPS authentication blocked the first push. The signed-in Unity environment is independent of GitHub authentication.
+
+| Commit | Verified task |
+|---|---|
+| 9edf8fa | Capture eight Editor scripts, package README and original Unity GUIDs. Confirm all 20 copied files matched their source. |
+| 4dc723b | Generate and serialize authored positive frame weights, include weight 100, preserve additional frames during preview and selective restore. |
+| fe74b64 | Rotate imported tangents with the changing texture direction while retaining handedness. |
+| 8f0be11 | Use neighboring motion to resolve ambiguous attachment, distinguish seam partners from touching vertices, limit strain at weak anchors and refresh corrected layer surfaces. |
+| f856c0f | Expose explicit authored reference modes, support reverse mapping, edit individual knots, preserve per-frame redo precision and extend clipping inspection. |
+
+Unity 6000.0.67f1 ran in isolated projects. The synthetic suite passed all three methods, actual baked vertices at 0/25/50/75/100, a shape returning to rest at 100, an ambiguous moving surface, split seam versus touching panels, rigid tangent rotation, mirrored tangent handedness, reference offset, reversed motion, strain clamp, frame editing and saved asset reimport after selective restoration. A corrected private regression harness queries the 100 frame by weight and includes the edited weight in its reflected history entry. Its previous assumptions were specific to single-frame output.
+
+The real-asset suite passed on Day_slip, Day_shirts, Ink Qipao, Hoodie, Bikini and Belt Chest. It verified base geometry and skinning, renderer references, existing shape frames, interpolation, restore/reuse, grouped Undo/Redo, scene reopening, hard detail and seam checks. Additional runs passed preview corrections and history, layer enumeration order, and Modular Avatar preview plus NDMF processing on the installed SDK dependencies. A reversed binding mapped 37 to 63 and could be removed by restore. No private meshes or fixture exports were added to Git.
+
+For a repeatable public smoke test, import the local package into a disposable Unity 6 project under Assets. Copy Validation/AccuracyChecks.cs into Assets/Editor **after** the package import completes. Run the editor with -batchmode -nographics -quit -projectPath <scratch-project> -executeMethod AccuracyChecks.Run -logFile <log>. Require exit zero and the SHAPEFORGE ACCURACY CHECKS PASSED marker. The check creates synthetic assets in the scratch project.
+
+Local package: D:/Unity Personal/ShapeForge-Phase2-Local.unitypackage. SHA-256 44BECA656930B2F7B1493D0F16AF7EA7CF10C51C40548A31B402FED106E90578. Verified the nine asset payloads and package GUIDs against the checkout. Clean import and smoke test both exited zero. The development branch is local. No publishing or installation into the user's authoring project was performed.

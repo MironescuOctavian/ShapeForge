@@ -47,3 +47,9 @@ Eden Labs documents choosing reference and source mesh states, a minimum surface
 Haï documents non-destructive Transfer Blendshape, selection of applied blendshapes, and continuously weighted selections from bones, connected polygons, blendshapes and spatial regions. The manual acknowledges transfer can fail on some models. Borrow the idea of a reusable soft influence region for residual editing. Its documentation provides no basis for ranking nearest-face, RBF or collision accuracy against ShapeForge. No proprietary implementation was inspected. [Starmesh reference](https://docs.hai-vr.dev/docs/products/starmesh/reference)
 
 Approval requested for baseline identification and validation first, followed by one independently measured geometry change at a time.
+
+## Phase 2 disposition
+
+Implemented the five ranked changes on the confirmed local baseline and exercised their normal generation, preview and save paths in Unity. The release candidate also transports tangents from UV derivatives, retains per-knot edits and extends preview crossing diagnostics. The progress document identifies the commits, tested packages and repeatable public check. The findings document records the measured limits and actual costs.
+
+Keep authored source knots as the default. Automatic subdivision between knots, continuous collision certification, broader rigid-detail rotation and global ARAP remain deferred pending measured failures that justify their cost. The next evidence needed for broader release readiness is independent-avatar coverage, textured shading review and reducing the cost of repeated clearance checks on large multilayer outfits. Phase 2 ended with a local package and development commits.
