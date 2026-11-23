@@ -72,6 +72,8 @@ namespace MilltinaBreastGenerator
         private readonly Stack<(Piece Piece, float Weight, Vector3[] Prior, bool[] Mask)> brushUndo = new();
         private readonly Stack<(Piece Piece, float Weight, Vector3[] Prior, bool[] Mask)> brushRedo = new();
         private Texture viewImage;
+        private Material selectionHighlight;
+        private double selectionHighlightUntil;
         private Rect renderedRect;
         private Vector3 renderedPosition;
         private Quaternion renderedRotation;
@@ -460,9 +462,9 @@ namespace MilltinaBreastGenerator
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     GUILayout.Label("Symmetry", EditorStyles.whiteMiniLabel, GUILayout.Width(58));
-                    DrawSymmetryToggle("Left/right", "Mirror across the avatar's centerline (X).", 1);
-                    DrawSymmetryToggle("Up/down", "Mirror across the garment's vertical midpoint (Y).", 2);
-                    DrawSymmetryToggle("Front/back", "Mirror across the garment's front/back midpoint (Z).", 4);
+                    DrawSymmetryToggle("X", "Mirror across the avatar's centerline (X).", 1);
+                    DrawSymmetryToggle("Y", "Mirror across the garment's vertical midpoint (Y).", 2);
+                    DrawSymmetryToggle("Z", "Mirror across the garment's front/back midpoint (Z).", 4);
                     if (width >= 630) DrawVertexSize();
                 }
             }
@@ -778,15 +780,7 @@ namespace MilltinaBreastGenerator
             OverlayHeading("Mesh");
             int selection = EditorGUILayout.Popup(selectedMesh, editableNames, GUILayout.ExpandWidth(true), GUILayout.MinWidth(130));
             LastControlHelp("Choose the clothing piece you want to edit. Other pieces stay visible for comparison.");
-            if (selection != selectedMesh)
-            {
-                EndStroke();
-                CancelBox();
-                ClearSpan();
-                status = null;
-                selectedMesh = selection;
-                ClearClipping();
-            }
+            if (selection != selectedMesh) SelectMesh(selection);
             if (OverlayButton(new GUIContent("Isolate", "Show only the selected garment and the body. Other pieces stop blocking picks."),
                 isolateMesh, GUILayout.Width(52)))
             {
@@ -797,6 +791,26 @@ namespace MilltinaBreastGenerator
                 status = null;
                 Repaint();
             }
+        }
+
+        private void SelectMesh(int selection)
+        {
+            EndStroke();
+            CancelBox();
+            ClearSpan();
+            status = null;
+            selectedMesh = selection;
+            ClearClipping();
+            InvalidateVertexVisibility();
+            if (!selectionHighlight)
+            {
+                var shader = Shader.Find("Hidden/ShapeForge/SelectionHighlight");
+                if (shader)
+                    selectionHighlight = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+            }
+            selectionHighlightUntil = EditorApplication.timeSinceStartup + 2;
+            viewImage = null;
+            Repaint();
         }
 
         private bool IsVisible(Piece piece) =>
@@ -923,6 +937,12 @@ namespace MilltinaBreastGenerator
                         if (materials[i])
                             preview.DrawMesh(piece.Baked, piece.Renderer.localToWorldMatrix, materials[i], i);
                     }
+                }
+                if (selectionHighlight && selectionHighlightUntil > EditorApplication.timeSinceStartup)
+                {
+                    var selected = pieces[selectedMesh + 1];
+                    for (int i = 0; i < selected.Baked.subMeshCount; i++)
+                        preview.DrawMesh(selected.Baked, selected.Renderer.localToWorldMatrix, selectionHighlight, i);
                 }
                 preview.Render();
                 viewImage = preview.EndPreview();
@@ -1129,6 +1149,12 @@ namespace MilltinaBreastGenerator
 
         private void Update()
         {
+            if (selectionHighlightUntil > 0 && EditorApplication.timeSinceStartup >= selectionHighlightUntil)
+            {
+                selectionHighlightUntil = 0;
+                viewImage = null;
+                Repaint();
+            }
             AdvanceClipping();
             if (stampQueued && strokePiece != null && EditorApplication.timeSinceStartup >= nextDragUpdate)
             {
@@ -2519,6 +2545,9 @@ namespace MilltinaBreastGenerator
             viewImage = null;
             preview?.Cleanup();
             preview = null;
+            if (selectionHighlight) DestroyImmediate(selectionHighlight);
+            selectionHighlight = null;
+            selectionHighlightUntil = 0;
             foreach (var piece in pieces)
                 DestroyImmediate(piece.Baked);
             pieces.Clear();
