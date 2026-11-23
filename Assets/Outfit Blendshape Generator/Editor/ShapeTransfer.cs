@@ -162,7 +162,6 @@ namespace MilltinaBreastGenerator
             var deformation = body.Deltas;
             float largestDelta = body.Peak;
             float radius = body.Radius;
-            var queryRegion = body.QueryRegion;
             var surface = body.OriginalSurface;
             var deltas = new Vector3[vertices.Length];
             var restGap = new float[vertices.Length];
@@ -170,6 +169,7 @@ namespace MilltinaBreastGenerator
             var confidence = new float[vertices.Length];
             var proximity = new float[vertices.Length];
             var bodyToOutfit = outfitToBody.inverse;
+            var hints = NeighborMotionHints(outfit, vertices, outfitToBody, body, out var matches);
             int changed = 0;
             int faded = 0;
             for (int i = 0; i < vertices.Length; i++)
@@ -178,9 +178,26 @@ namespace MilltinaBreastGenerator
                 if (!float.IsFinite(point.sqrMagnitude))
                     throw new InvalidOperationException("The outfit contains an invalid transformed vertex.");
 
-                if (!queryRegion.Contains(point) || !surface.FindClosest(point, radius, out var triangle, out var barycentric, out var offset))
-                    continue;
+                var (matched, triangle, barycentric, offset) = matches[i];
+                if (!matched) continue;
 
+                if (hints[i].Count >= 2)
+                {
+                    var hint = hints[i].Sum / hints[i].Count;
+                    var local = deformation[triangle.A] * barycentric.x + deformation[triangle.B] * barycentric.y + deformation[triangle.C] * barycentric.z;
+                    float mismatch = (local - hint).sqrMagnitude;
+                    float variance = Mathf.Max(0, hints[i].Squares / hints[i].Count - hint.sqrMagnitude);
+                    if (mismatch > Mathf.Max(variance * 4, largestDelta * largestDelta * .04f))
+                    {
+                        float range = Mathf.Min(radius, offset.magnitude + radius * .08f);
+                        if (surface.FindClosest(point, range, out var face, out var weights, out var separation, deformation, hint, hints[i].Normal.normalized))
+                        {
+                            triangle = face;
+                            barycentric = weights;
+                            offset = separation;
+                        }
+                    }
+                }
                 float distance = offset.magnitude;
                 float fade = 1f - Mathf.SmoothStep(0, 1, Mathf.InverseLerp(radius * 0.45f, radius, distance));
                 proximity[i] = fade;
@@ -228,9 +245,10 @@ namespace MilltinaBreastGenerator
             if (changed == 0 && !allowStationary)
                 throw new InvalidOperationException("No outfit vertices matched the deforming body surface. Check the outfit fit, rest pose, and scale.");
 
-            var islands = FindIslands(outfit, vertices, out var closed);
+            var partners = SeamPartners(outfit, vertices);
+            var islands = FindIslands(outfit, partners, out var closed);
 
-            FitConnected(outfit, vertices, deltas, proximity, normals, confidence, outfitToBody, largestDelta,
+            FitConnected(outfit, partners, vertices, deltas, proximity, normals, confidence, outfitToBody, largestDelta,
                 restGap, body.FittedSurface);
             int compactDetails = PreserveCompactDetails(vertices, deltas, islands, closed, outfitToBody, largestDelta);
             warning = faded > 0
@@ -243,7 +261,53 @@ namespace MilltinaBreastGenerator
             return deltas;
         }
 
-        internal static List<float> FrameWeights(Mesh mesh, string shape)
+        private static (Vector3 Sum, Vector3 Normal, float Squares, int Count)[] NeighborMotionHints(Mesh mesh, Vector3[] vertices, Matrix4x4 toBody, FitSource body,
+            out (bool Matched, TriangleSurface.Triangle Face, Vector3 Weights, Vector3 Offset)[] matches)
+        {
+            matches = new (bool, TriangleSurface.Triangle, Vector3, Vector3)[vertices.Length];
+            var hints = new (Vector3 Sum, Vector3 Normal, float Squares, int Count)[vertices.Length];
+            var motion = new Vector3[vertices.Length];
+            var faceNormals = new Vector3[vertices.Length];
+            var nearest = matches;
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                var point = toBody.MultiplyPoint3x4(vertices[i]);
+                if (!body.QueryRegion.Contains(point) || !body.OriginalSurface.FindClosest(point, body.Radius, out var face, out var weights, out var offset)) continue;
+                nearest[i] = (true, face, weights, offset);
+                faceNormals[i] = body.OriginalSurface.Normal(face);
+                motion[i] = body.Deltas[face.A] * weights.x + body.Deltas[face.B] * weights.y + body.Deltas[face.C] * weights.z;
+            }
+            var edges = new HashSet<(int, int)>();
+            for (int part = 0; part < mesh.subMeshCount; part++)
+            {
+                if (mesh.GetTopology(part) != MeshTopology.Triangles) continue;
+                var indices = mesh.GetTriangles(part);
+                for (int k = 0; k < indices.Length; k += 3)
+                {
+                    Edge(indices[k], indices[k+1]);
+                    Edge(indices[k+1], indices[k+2]);
+                    Edge(indices[k+2], indices[k]);
+                }
+            }
+            return hints;
+
+            void Edge(int a, int b)
+            {
+                if (!edges.Add(a < b ? (a,b) : (b,a))) return;
+                if (nearest[a].Matched) Add(b, a);
+                if (nearest[b].Matched) Add(a, b);
+            }
+            void Add(int i, int neighbor)
+            {
+                var value = motion[neighbor];
+                hints[i].Normal += faceNormals[neighbor];
+                hints[i].Sum += value;
+                hints[i].Squares += value.sqrMagnitude;
+                hints[i].Count++;
+            }
+        }
+
+        internal static List<float> FrameWeights(Mesh mesh, string shape, bool reverse = false)
         {
             int index = mesh.GetBlendShapeIndex(shape);
             if (index < 0) throw new InvalidOperationException($"Missing source shape {shape}.");
@@ -313,18 +377,51 @@ namespace MilltinaBreastGenerator
             return bounds;
         }
 
-        private static int[] FindIslands(Mesh mesh, Vector3[] positions, out bool[] closed)
+        internal static int[] SeamPartners(Mesh mesh, Vector3[] vertices)
         {
-            var parents = new int[positions.Length];
-            var coincident = new Dictionary<Vector3, int>();
-            for (int i = 0; i < positions.Length; i++)
+            var parent = new int[vertices.Length];
+            for (int i = 0; i < parent.Length; i++) parent[i] = i;
+            var edges = new Dictionary<(Vector3, Vector3), (int A, int B, Vector3 Normal, int Count)>();
+            for (int part = 0; part < mesh.subMeshCount; part++)
             {
-                if (!coincident.TryGetValue(positions[i], out int first))
-                    coincident.Add(positions[i], first = i);
-                parents[i] = first;
+                if (mesh.GetTopology(part) != MeshTopology.Triangles) continue;
+                var indices = mesh.GetTriangles(part);
+                for (int k = 0; k < indices.Length; k += 3)
+                {
+                    int a = indices[k], b = indices[k + 1], c = indices[k + 2];
+                    var normal = Vector3.Cross(vertices[b] - vertices[a], vertices[c] - vertices[a]).normalized;
+                    Count(a, b, normal);
+                    Count(b, c, normal);
+                    Count(c, a, normal);
+                }
             }
+            foreach (var item in edges)
+            {
+                var edge = item.Value;
+                if (edge.Count != 1 || !edges.TryGetValue((item.Key.Item2, item.Key.Item1), out var other) ||
+                    other.Count != 1 || Vector3.Dot(edge.Normal, other.Normal) < -.5f) continue;
+                parent[Root(edge.A)] = Root(other.B);
+                parent[Root(edge.B)] = Root(other.A);
+            }
+            for (int i = 0; i < parent.Length; i++) parent[i] = Root(i);
+            return parent;
 
-            var weld = (int[])parents.Clone();
+            int Root(int i)
+            {
+                while (parent[i] != i) { parent[i] = parent[parent[i]]; i = parent[i]; }
+                return i;
+            }
+            void Count(int a, int b, Vector3 normal)
+            {
+                var key = (vertices[a], vertices[b]);
+                edges.TryGetValue(key, out var prior);
+                edges[key] = (a, b, normal, prior.Count + 1);
+            }
+        }
+
+        private static int[] FindIslands(Mesh mesh, int[] weld, out bool[] closed)
+        {
+            var parents = (int[])weld.Clone();
             var incidence = new Dictionary<(int, int), int>();
             for (int section = 0; section < mesh.subMeshCount; section++)
             {
@@ -521,22 +618,14 @@ namespace MilltinaBreastGenerator
             throw new InvalidOperationException("The source blendshape has no frames.");
         }
 
-        private static void FitConnected(Mesh mesh, Vector3[] positions, Vector3[] deltas,
+        private static void FitConnected(Mesh mesh, int[] weld, Vector3[] positions, Vector3[] deltas,
             float[] proximity, Vector3[] normals, float[] confidence, Matrix4x4 toBody, float scale,
             float[] restGap, TriangleSurface smallBody)
         {
             // Solve on welded topology so hard shading edges and UV splits share motion.
-            var first = new Dictionary<Vector3, int>();
-            var weld = new int[positions.Length];
             var neighbors = new List<(int Index, float Weight, Vector3 Direction)>[positions.Length];
             var totals = new float[positions.Length];
             var edges = new HashSet<(int, int)>();
-            for (int i = 0; i < weld.Length; i++)
-            {
-                if (!first.TryGetValue(positions[i], out int index))
-                    first.Add(positions[i], index = i);
-                weld[i] = index;
-            }
 
             for (int section = 0; section < mesh.subMeshCount; section++)
             {
@@ -615,6 +704,27 @@ namespace MilltinaBreastGenerator
                 }
                 (current, next) = (next, current);
             }
+            // A poorly supported bridge may stretch despite smooth displacement. Keep its anchored side fixed.
+            Array.Copy(current, next, current.Length);
+            for (int i = 0; i < current.Length; i++)
+            {
+                if (neighbors[i] == null || proximity[i] <= 0 || confidence[i] >= .5f) continue;
+                var strainShift = Vector3.zero;
+                int count = 0;
+                foreach (var edge in neighbors[i])
+                {
+                    int j = edge.Index;
+                    if (confidence[j] <= confidence[i] + .25f) continue;
+                    var rest = toBody.MultiplyVector(positions[i] - positions[j]);
+                    var adjustment = LimitEdgeStrain(rest, current[i] - current[j]);
+                    if (adjustment.sqrMagnitude <= 1e-16f) continue;
+                    strainShift += adjustment;
+                    count++;
+                }
+                if (count > 0)
+                    next[i] += Vector3.ClampMagnitude(strainShift / count, scale * .05f);
+            }
+            (current, next) = (next, current);
             // Check the actual shrunken surface after the connected solve. Its nearest
             // face can differ from the original match, especially beneath a fold.
             var collision = new Vector3[current.Length];
@@ -673,6 +783,15 @@ namespace MilltinaBreastGenerator
                 totals[a] += weight;
                 totals[b] += weight;
             }
+        }
+
+        internal static Vector3 LimitEdgeStrain(Vector3 rest, Vector3 relativeMotion)
+        {
+            var edge = rest + relativeMotion;
+            float length = edge.magnitude;
+            float original = rest.magnitude;
+            if (length <= 1e-8f || original <= 1e-8f) return Vector3.zero;
+            return edge * (Mathf.Clamp(length, original * .75f, original * 1.25f) / length - 1f);
         }
 
         private static (int A, int B, float T, float Strength)[] FindStraightSpans(Vector3[] rest,
@@ -1016,19 +1135,19 @@ namespace MilltinaBreastGenerator
             }
 
             internal bool FindClosest(Vector3 point, float radius, out Triangle triangle,
-                out Vector3 barycentric, out Vector3 offset)
+                out Vector3 barycentric, out Vector3 offset, Vector3[] motion = null, Vector3 hint = default, Vector3 expectedNormal = default)
             {
                 float best = radius * radius;
                 int face = -1;
                 barycentric = default;
                 offset = default;
-                Search(0, point, nodes[0].Bounds.SqrDistance(point), ref best, ref face, ref barycentric, ref offset);
+                Search(0, point, nodes[0].Bounds.SqrDistance(point), ref best, ref face, ref barycentric, ref offset, motion, hint, expectedNormal);
                 triangle = face >= 0 ? triangles[face] : default;
                 return face >= 0;
             }
 
             private void Search(int index, Vector3 point, float bound, ref float best,
-                ref int face, ref Vector3 barycentric, ref Vector3 offset)
+                ref int face, ref Vector3 barycentric, ref Vector3 offset, Vector3[] motion, Vector3 hint, Vector3 expectedNormal)
             {
                 if (bound >= best)
                     return;
@@ -1044,8 +1163,8 @@ namespace MilltinaBreastGenerator
                         (first, second) = (second, first);
                         (firstBound, secondBound) = (secondBound, firstBound);
                     }
-                    Search(first, point, firstBound, ref best, ref face, ref barycentric, ref offset);
-                    Search(second, point, secondBound, ref best, ref face, ref barycentric, ref offset);
+                    Search(first, point, firstBound, ref best, ref face, ref barycentric, ref offset, motion, hint, expectedNormal);
+                    Search(second, point, secondBound, ref best, ref face, ref barycentric, ref offset, motion, hint, expectedNormal);
                     return;
                 }
 
@@ -1058,6 +1177,13 @@ namespace MilltinaBreastGenerator
                     var weights = ClosestBarycentric(point - a, ab, ac);
                     var residual = point - (a + ab * weights.y + ac * weights.z);
                     float distance = residual.sqrMagnitude;
+                    if (motion != null)
+                    {
+                        var interpolated = motion[triangle.A] * weights.x + motion[triangle.B] * weights.y + motion[triangle.C] * weights.z;
+                        float disagreement = (interpolated - hint).sqrMagnitude;
+                        float orientation = Vector3.Dot(expectedNormal, Vector3.Cross(ab, ac).normalized);
+                        distance += disagreement * (.25f + .125f * (1 - orientation));
+                    }
                     if (!(distance < best))
                         continue;
                     best = distance;

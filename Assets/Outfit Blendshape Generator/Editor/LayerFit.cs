@@ -42,9 +42,11 @@ namespace MilltinaBreastGenerator
         {
             internal Mesh Source;
             internal readonly List<int[]> TriangleSections = new();
+            internal readonly HashSet<(int A, int B)> Edges = new();
             internal Matrix4x4 ToBody;
             internal float Winding = 1f;
             internal Vector3[] Local, Rest, Motion, Result;
+            internal int[] Weld;
             internal ShapeTransfer.TriangleSurface Surface;
             internal string Message;
             internal Exception Error;
@@ -114,6 +116,7 @@ namespace MilltinaBreastGenerator
                 try
                 {
                     p.Local = p.Source.vertices;
+                    p.Weld = ShapeTransfer.SeamPartners(p.Source, p.Local);
                     p.Result = ShapeTransfer.Fit(source, p.Source, p.Local, p.ToBody, out p.Message, allowStationary);
                     p.Rest = Array.ConvertAll(p.Local, p.ToBody.MultiplyPoint3x4);
                     p.Motion = Array.ConvertAll(p.Result, p.ToBody.MultiplyVector);
@@ -122,7 +125,16 @@ namespace MilltinaBreastGenerator
                         {
                             var indices = p.Source.GetTriangles(section);
                             if (indices.Length >= 3)
+                            {
                                 p.TriangleSections.Add(indices);
+                                for (int k = 0; k < indices.Length; k += 3)
+                                {
+                                    Add(indices[k], indices[k+1]);
+                                    Add(indices[k+1], indices[k+2]);
+                                    Add(indices[k+2], indices[k]);
+                                }
+                                void Add(int a, int b) => p.Edges.Add(a < b ? (a,b) : (b,a));
+                            }
                         }
                     if (renderers.Length > 1 && p.TriangleSections.Count > 0)
                         BuildSurfaces(p);
@@ -136,8 +148,52 @@ namespace MilltinaBreastGenerator
                 Motion = source.Deltas, ToBody = Matrix4x4.identity, IsBody = true
             };
             BuildSurfaces(skin);
+            // Read a common snapshot for every piece, then publish accepted movement together.
+            for (int pass = 0; pass < (ordered.Count > 1 ? 3 : 1); pass++)
+            {
+                foreach (var p in ordered)
+                    Correct(p, skin);
+                if (ordered.Count < 2) break;
+                bool changed = false;
+                foreach (var p in ordered)
+                {
+                    if (p.Fitted == null) continue;
+                    float peakChange = 0;
+                    for (int i = 0; i < p.Motion.Length; i++)
+                    {
+                        var motion = p.ToBody.MultiplyVector(p.Result[i]);
+                        peakChange = Mathf.Max(peakChange, (motion - p.Motion[i]).sqrMagnitude);
+                        p.Motion[i] = motion;
+                    }
+                    if (peakChange <= radius * radius * 1e-8f) continue;
+                    changed = true;
+                    if (pass == 2)
+                    {
+                        p.Message += " Layer corrections reached the pass limit. Inspect remaining contacts in Preview.";
+                        continue;
+                    }
+                    for (int step = 0; step < p.Fitted.Length; step++)
+                    {
+                        var points = new Vector3[p.Rest.Length];
+                        float t = (step + 1) * .5f;
+                        for (int i = 0; i < points.Length; i++) points[i] = p.Rest[i] + t * p.Motion[i];
+                        p.Fitted[step].Refit(points);
+                    }
+                }
+                if (!changed) break;
+            }
+
+            // Preview keeps only solved offsets. Release the search trees and temporary topology.
             foreach (var p in ordered)
-                Correct(p, skin);
+            {
+                p.Fitted = null;
+                p.Surface = null;
+                p.Rest = p.Motion = p.Local = null;
+                p.Weld = null;
+                p.TriangleSections.Clear();
+                p.Edges.Clear();
+                p.Edges.TrimExcess();
+            }
 
             void BuildSurfaces(Piece piece)
             {
@@ -159,7 +215,7 @@ namespace MilltinaBreastGenerator
 
         private void Correct(Piece p, Piece skin)
         {
-            var pushes = new Dictionary<Vector3, Vector3>();
+            var pushes = new Dictionary<int, Vector3>();
             var inverse = p.ToBody.inverse;
             foreach (var inner in ordered)
                 if (inner != p && inner.Surface != null)
@@ -171,6 +227,12 @@ namespace MilltinaBreastGenerator
 
             void SolveAgainst(Piece inner)
             {
+                if (!inner.IsBody)
+                {
+                    var bounds = inner.Range;
+                    bounds.Expand(radius * 2);
+                    if (!bounds.Intersects(p.Range)) return;
+                }
                 var motionInBody = inner.IsBody ? Array.ConvertAll(p.Result, p.ToBody.MultiplyVector) : p.Motion;
                 for (int i = 0; i < p.Rest.Length; i++) Sample(i, i, i);
                 foreach (var indices in p.TriangleSections)
@@ -179,11 +241,10 @@ namespace MilltinaBreastGenerator
                     {
                         int a = indices[k], b = indices[k+1], c = indices[k+2];
                         Sample(a,b,c);
-                        Sample(a,b,-1);
-                        Sample(b,c,-1);
-                        Sample(c,a,-1);
                     }
                 }
+
+                foreach (var (a,b) in p.Edges) Sample(a,b,-1);
 
                 void Sample(int a, int b, int c)
                 {
@@ -191,15 +252,15 @@ namespace MilltinaBreastGenerator
                     var motion = motionInBody[a] + motionInBody[b];
                     if (c >= 0) { point += p.Rest[c]; motion += motionInBody[c]; }
                     float count = c >= 0 ? 3 : 2;
-                    if (inner.IsBody && motion.sqrMagnitude < 1e-14f) return;
+                    if (radius <= 0) return;
                     var push = Vector3.zero;
                     inner.Constrain(point/count, motion/count, radius, ref push);
                     if (push.sqrMagnitude < 1e-14f) return;
                     Store(a); Store(b); if (c >= 0) Store(c);
                     void Store(int i)
                     {
-                        if (!pushes.TryGetValue(p.Local[i], out var prior) || push.sqrMagnitude > prior.sqrMagnitude)
-                            pushes[p.Local[i]] = push;
+                        if (!pushes.TryGetValue(p.Weld[i], out var prior) || push.sqrMagnitude > prior.sqrMagnitude)
+                            pushes[p.Weld[i]] = push;
                     }
                 }
             }
@@ -207,7 +268,7 @@ namespace MilltinaBreastGenerator
             {
                 for (int i = 0; i < p.Result.Length; i++)
                 {
-                    if (!pushes.TryGetValue(p.Local[i], out var push))
+                    if (!pushes.TryGetValue(p.Weld[i], out var push))
                         continue;
                     p.Result[i] += inverse.MultiplyVector(push);
                 }
