@@ -53,3 +53,7 @@ Approval requested for baseline identification and validation first, followed by
 Implemented the five ranked changes on the confirmed local baseline and exercised their normal generation, preview and save paths in Unity. The release candidate also transports tangents from UV derivatives, retains per-knot edits and extends preview crossing diagnostics. The progress document identifies the commits, tested packages and repeatable public check. The findings document records the measured limits and actual costs.
 
 Keep authored source knots as the default. Automatic subdivision between knots, continuous collision certification, broader rigid-detail rotation and global ARAP remain deferred pending measured failures that justify their cost. The next evidence needed for broader release readiness is independent-avatar coverage, textured shading review and reducing the cost of repeated clearance checks on large multilayer outfits. Phase 2 ended with a local package and development commits.
+
+## Phase 3 disposition
+
+The editor and repository documentation now use the ShapeForge name. Barycentric remains the default and the algorithm and authored state controls live in the collapsed Advanced section. The separate preview retains its correction workflow and uses a higher contrast charcoal and gold toolbar. The tested package and interface captures are listed in the progress handoff. The approved icon and licensed outfit triptychs remain pending their source assets and publication clearance.

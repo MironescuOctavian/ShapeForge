@@ -1,0 +1,35 @@
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Bb]uild/
+/[Bb]uilds/
+/.vs/
+/.idea/
+/[Pp]ackages/
+/[Pp]roject[Ss]ettings/
+*.csproj
+*.sln
+*.slnx
+*.unitypackage
+*.fbx
+*.blend
+*.blend1
+.env
+.env.*
+*.pfx
+*.key
+[Dd]esktop.ini
+.DS_Store
+Thumbs.db
+
+# Only ShapeForge's distributable Unity assets belong in this repository.
+/Assets/*
+!/Assets/Outfit Blendshape Generator/
+!/Assets/Outfit Blendshape Generator.meta
+/Assets/Outfit Blendshape Generator/*
+!/Assets/Outfit Blendshape Generator/Editor/
+!/Assets/Outfit Blendshape Generator/Editor.meta
+!/Assets/Outfit Blendshape Generator/README.md
+!/Assets/Outfit Blendshape Generator/README.md.meta

@@ -35,3 +35,11 @@ The real-asset suite passed on Day_slip, Day_shirts, Ink Qipao, Hoodie, Bikini a
 For a repeatable public smoke test, import the local package into a disposable Unity 6 project under Assets. Copy Validation/AccuracyChecks.cs into Assets/Editor **after** the package import completes. Run the editor with -batchmode -nographics -quit -projectPath <scratch-project> -executeMethod AccuracyChecks.Run -logFile <log>. Require exit zero and the SHAPEFORGE ACCURACY CHECKS PASSED marker. The check creates synthetic assets in the scratch project.
 
 Local package: D:/Unity Personal/ShapeForge-Phase2-Local.unitypackage. SHA-256 44BECA656930B2F7B1493D0F16AF7EA7CF10C51C40548A31B402FED106E90578. Verified the nine asset payloads and package GUIDs against the checkout. Clean import and smoke test both exited zero. The development branch is local. No publishing or installation into the user's authoring project was performed.
+
+## Phase 3 delivery · 2026-11-23
+
+Commit 09001f5 applies the ShapeForge menu and branding, a collapsed Advanced section, and clearer preview controls. The compact generator and separate Unity preview were captured in a graphical Unity 6000.0.67f1 session using a synthetic garment. See docs/images for both interface captures and the purchased-outfit capture checklist.
+
+The final ShapeForge.unitypackage at D:/Unity Personal/ShapeForge.unitypackage contains eight Editor scripts and the bundled README with the original Unity asset metadata. Its SHA-256 is 83906DB9BF1CAD0BBD9D8C1821DEEFDEC022FD7907A4C4446B2A8B8F432BAA17. Package export and clean import exited zero. The imported package passed AccuracyChecks.Run, including all three transfer methods, baked intermediate weights, alternate reference and reverse transfer, seam separation, shading and selective restore.
+
+The approved icon was unavailable. The README banner uses the requested charcoal and gold palette without an icon. Purchased outfit images are pending documented publication rights. No release or tag is part of this phase.
