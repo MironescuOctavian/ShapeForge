@@ -33,6 +33,7 @@ namespace MilltinaBreastGenerator
         private SkinnedMeshRenderer detectedBody;
         private Vector2 pieceScroll;
         private bool refreshSelection = true;
+        private bool showAdvanced;
         private float[] referenceWeights = Array.Empty<float>();
         private bool changingPlayMode;
         private GUIStyle frame;
@@ -72,10 +73,10 @@ namespace MilltinaBreastGenerator
             internal bool CanGenerate => !HasShape && !OutsideRegion && GenerationError == null;
         }
 
-        [MenuItem("Tools/Octa/Outfit Blendshape Generator")]
+        [MenuItem("Tools/ShapeForge/Blendshape Generator")]
         private static void Open()
         {
-            var window = GetWindow<GeneratorWindow>("Outfit Blendshape Generator", true, typeof(SceneView));
+            var window = GetWindow<GeneratorWindow>("ShapeForge", true, typeof(SceneView));
             window.RecoverOutfit();
             window.ClearBodyAsOutfit();
             window.InvalidateSelection();
@@ -83,7 +84,7 @@ namespace MilltinaBreastGenerator
 
         private void OnEnable()
         {
-            minSize = new Vector2(400, 433);
+            minSize = new Vector2(400, 440);
             wantsMouseMove = true;
             RecoverOutfit();
             ClearBodyAsOutfit();
@@ -158,7 +159,7 @@ namespace MilltinaBreastGenerator
                 GUI.FocusControl(null);
 
             frame ??= new GUIStyle { padding = new RectOffset(12, 12, 10, 10) };
-            heading ??= new GUIStyle(EditorStyles.boldLabel) { fontSize = 15 };
+            heading ??= new GUIStyle(EditorStyles.boldLabel) { fontSize = 21, normal = { textColor = new Color(1f, .82f, .46f) } };
             checkmark ??= new GUIStyle(EditorStyles.boldLabel)
             {
                 alignment = TextAnchor.MiddleCenter,
@@ -174,10 +175,17 @@ namespace MilltinaBreastGenerator
 
             using (new EditorGUILayout.VerticalScope(frame, GUILayout.ExpandHeight(true)))
             {
-                using (new EditorGUILayout.HorizontalScope())
+                var banner = GUILayoutUtility.GetRect(0, 52, GUILayout.ExpandWidth(true));
+                if (Event.current.type == EventType.Repaint)
                 {
-                    EditorGUILayout.LabelField("Outfit Blendshape Generator", heading, GUILayout.Height(24));
-                    GUILayout.Label("v0.34", EditorStyles.miniLabel, GUILayout.Width(32));
+                    EditorGUI.DrawRect(banner, new Color(.10f, .095f, .085f));
+                    EditorGUI.DrawRect(new Rect(banner.x, banner.y, 2, banner.height), new Color(.86f, .64f, .30f));
+                    GUI.Label(new Rect(banner.x + 12, banner.y + 3, banner.width - 24, 28), "ShapeForge", heading);
+                    var previous = GUI.contentColor;
+                    GUI.contentColor = EditorGUIUtility.isProSkin ? new Color(.78f, .75f, .69f) : Color.white;
+                    GUI.Label(new Rect(banner.x + 13, banner.y + 30, banner.width - 26, 16),
+                        "Precision Blendshape Generator", EditorStyles.whiteMiniLabel);
+                    GUI.contentColor = previous;
                 }
                 EditorGUILayout.Space(6);
 
@@ -249,17 +257,21 @@ namespace MilltinaBreastGenerator
             bool validBody = sceneBody && (!sceneOutfit || (body.gameObject.scene == outfitRoot.scene &&
                 GeneratorAssets.AvatarRoot(body) == avatarRoot));
             DrawSourceShapes(body ? body.sharedMesh : null);
-            var nextMethod = (TransferMethod)EditorGUILayout.EnumPopup(new GUIContent("Transfer Method",
-                "Start with Barycentric, the default. Try Weighted for loose cloth or RBF for a broad change like the belly. Compare in Preview."), transferMethod);
-            var nextReference = (BodyReference)EditorGUILayout.EnumPopup(new GUIContent("Garment authored against", "Other active shapes uses the current body sliders. Target at 100 reverses the clothing slider over 0–100."), referenceMode);
-            if (nextMethod != transferMethod || nextReference != referenceMode)
+            showAdvanced = EditorGUILayout.Foldout(showAdvanced, "Advanced · " + transferMethod, true);
+            if (showAdvanced)
             {
-                referenceMode = nextReference;
-                transferMethod = nextMethod;
-                results.Clear();
-                summary = null;
-                InvalidateSelection();
-                GUIUtility.ExitGUI();
+                var nextMethod = (TransferMethod)EditorGUILayout.EnumPopup(new GUIContent("Transfer Method",
+                    "Start with Barycentric, the default. Try Weighted for loose cloth or RBF for a broad change like the belly. Compare in Preview."), transferMethod);
+                var nextReference = (BodyReference)EditorGUILayout.EnumPopup(new GUIContent("Garment authored against", "Other active shapes uses the current body sliders. Target at 100 reverses the clothing slider over 0–100."), referenceMode);
+                if (nextMethod != transferMethod || nextReference != referenceMode)
+                {
+                    referenceMode = nextReference;
+                    transferMethod = nextMethod;
+                    results.Clear();
+                    summary = null;
+                    InvalidateSelection();
+                    GUIUtility.ExitGUI();
+                }
             }
             bool sourceShape = validBody && shapeNames.Contains(sourceShapeName);
 
@@ -269,7 +281,7 @@ namespace MilltinaBreastGenerator
                 StatusRow("Source mesh", validBody, validBody ? body.name : "Select the avatar body");
                 StatusRow("Source shape", sourceShape, sourceShape ? sourceShapeName : "Missing");
                 StatusRow("Synchronization", ModularAvatarSync.Available,
-                    ModularAvatarSync.Available ? "MA Blendshape Sync" : "Manual");
+                    ModularAvatarSync.Available ? "MA Blendshape Sync" : "Manual slider");
             }
 
             if (!sceneOutfit)
@@ -329,23 +341,26 @@ namespace MilltinaBreastGenerator
                 {
                     float actionWidth = Mathf.Max(90f, (position.width - 36f) * .32f);
                     var previousColor = GUI.backgroundColor;
-                    GUI.backgroundColor = new Color(.40f, .83f, 1f);
+
                     bool openPreview = GUILayout.Button(new GUIContent("Preview", "See the fit and make local corrections before saving."), GUILayout.Height(34), GUILayout.Width(actionWidth));
-                    GUI.backgroundColor = previousColor;
+
                     if (openPreview)
                         FitPreview.Open(body, selected.Select(p => p.Renderer).ToArray(), sourceShapeName, transferMethod, referenceMode);
-                    if (GUILayout.Button(new GUIContent($"Generate ({selected.Length})", "Save the chosen shape on each checked piece. Existing outfit shapes stay available."),
-                        GUILayout.Height(34), GUILayout.Width(actionWidth)))
+                    GUI.backgroundColor = new Color(1f, .74f, .34f);
+                    bool generate = GUILayout.Button(new GUIContent($"Generate ({selected.Length})", "Save the chosen shape on each checked piece. Existing outfit shapes stay available."),
+                        GUILayout.Height(34), GUILayout.Width(actionWidth));
+                    GUI.backgroundColor = previousColor;
+                    if (generate)
                     {
                         var fit = new LayerFit(body, selected.Select(p => p.Renderer).ToArray(), sourceShapeName, transferMethod, referenceMode);
-                        Run("Generate Milltina Outfit", "Generated", selected, r => GeneratorAssets.Generate(r, body, avatarRoot, fit: fit, shape: sourceShapeName));
+                        Run("Generate ShapeForge Blendshape", "Generated", selected, r => GeneratorAssets.Generate(r, body, avatarRoot, fit: fit, shape: sourceShapeName));
                     }
                 }
                 using (new EditorGUI.DisabledScope(restorable.Length == 0))
                 {
                     if (GUILayout.Button(new GUIContent($"Restore All ({restorable.Length})",
                         "Remove the chosen generated shape from every applicable piece in this outfit."), GUILayout.Height(34)))
-                        Run("Restore Milltina Outfit", "Restored", restorable, RestorePiece);
+                        Run("Restore ShapeForge Blendshape", "Restored", restorable, RestorePiece);
                 }
             }
 

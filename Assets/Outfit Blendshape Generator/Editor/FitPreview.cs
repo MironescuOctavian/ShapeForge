@@ -114,10 +114,10 @@ namespace MilltinaBreastGenerator
         internal static void Open(SkinnedMeshRenderer body, SkinnedMeshRenderer[] outfits, string shape = ShapeTransfer.Shape,
             TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral)
         {
-            var window = GetWindow<FitPreview>("Outfit Fit Preview");
+            var window = GetWindow<FitPreview>("ShapeForge Preview");
             window.wantsMouseMove = true;
             window.minSize = new Vector2(540, 360);
-            window.titleContent = new GUIContent($"Outfit Fit Preview · {method}",
+            window.titleContent = new GUIContent($"ShapeForge Preview · {method}",
                 $"Previewing {shape} with the {method} transfer method.");
             window.Build(body, outfits, shape, method, mode);
             window.Show();
@@ -240,9 +240,9 @@ namespace MilltinaBreastGenerator
             if (repaint)
             {
                 DrawViewport(viewport, overControls);
-                EditorGUI.DrawRect(toolbarFrame, new Color(.10f, .12f, .15f, 1f));
+                EditorGUI.DrawRect(toolbarFrame, new Color(.105f, .102f, .095f, 1f));
                 EditorGUI.DrawRect(new Rect(0, toolbarFrame.yMax - 1, toolbarFrame.width, 1),
-                    new Color(.53f, .64f, .77f, .28f));
+                    new Color(.73f, .62f, .44f, .28f));
             }
             using (new GUILayout.AreaScope(toolbar))
             {
@@ -271,7 +271,7 @@ namespace MilltinaBreastGenerator
             float width = Mathf.Min(position.width - 24, 530);
             float height = style.CalcHeight(new GUIContent(tip), width - 16) + 12;
             var box = new Rect(12, position.height - height - 10, width, height);
-            EditorGUI.DrawRect(box, new Color(.10f, .12f, .15f, 1));
+            EditorGUI.DrawRect(box, new Color(.105f, .102f, .095f, 1));
             var color = GUI.contentColor;
             GUI.contentColor = Color.white;
             GUI.Label(new Rect(box.x + 8, box.y + 5, box.width - 16, box.height - 10), tip, style);
@@ -347,9 +347,9 @@ namespace MilltinaBreastGenerator
                 DrawVisibility();
                 string hint = straighten
                     ? !EditableFrame ? "Select an authored frame to select a span." :
-                      spanPiece == null ? "1 · Click the first attachment point." :
-                      spanOffsets == null ? "2 · Click the second attachment point." :
-                      "3 · Review the gold strip. Enter applies it. Escape resets."
+                      spanPiece == null ? "Click the first attachment point." :
+                      spanOffsets == null ? "Click the second attachment point." :
+                      "Enter applies the span. Esc clears it."
                     : sculpt ? EditableFrame ? BrushHint()
                         : "Select an authored frame to sculpt."
                     : "Right-drag to look · WASD to fly · Scroll to zoom";
@@ -377,18 +377,18 @@ namespace MilltinaBreastGenerator
                     stretchWidth = false
                 };
                 floatingButton.normal.textColor = new Color(.93f, .96f, 1f);
-                floatingButton.hover.textColor = new Color(.55f, .91f, 1f);
+                floatingButton.hover.textColor = new Color(1f, .85f, .53f);
                 floatingButton.active.textColor = Color.white;
             }
             var oldColor = floatingButton.normal.textColor;
             if (active)
-                floatingButton.normal.textColor = new Color(.35f, .89f, 1f);
+                floatingButton.normal.textColor = new Color(1f, .82f, .47f);
             var button = GUILayoutUtility.GetRect(content, floatingButton, options);
             if (Event.current.type == EventType.Repaint)
             {
-                var fill = active ? new Color(.11f, .37f, .47f) : new Color(.17f, .20f, .24f);
+                var fill = active ? new Color(.29f, .22f, .12f) : new Color(.19f, .18f, .16f);
                 if (!GUI.enabled)
-                    fill = new Color(.135f, .155f, .18f);
+                    fill = new Color(.15f, .145f, .13f);
                 EditorGUI.DrawRect(button, fill);
             }
             bool clicked = GUI.Button(button, content, floatingButton);
@@ -401,7 +401,7 @@ namespace MilltinaBreastGenerator
             GUILayout.Space(4);
             var line = GUILayoutUtility.GetRect(0, 1, GUILayout.ExpandWidth(true));
             if (Event.current.type == EventType.Repaint)
-                EditorGUI.DrawRect(line, new Color(.53f, .64f, .77f, .20f));
+                EditorGUI.DrawRect(line, new Color(.73f, .62f, .44f, .20f));
             GUILayout.Space(4);
         }
 
@@ -410,7 +410,7 @@ namespace MilltinaBreastGenerator
             GUILayout.Space(7);
             var line = GUILayoutUtility.GetRect(1, 23, GUILayout.Width(1));
             if (Event.current.type == EventType.Repaint)
-                EditorGUI.DrawRect(line, new Color(.53f, .64f, .77f, .25f));
+                EditorGUI.DrawRect(line, new Color(.73f, .62f, .44f, .25f));
             GUILayout.Space(7);
         }
 
@@ -439,7 +439,7 @@ namespace MilltinaBreastGenerator
             LastControlHelp("Compare the original fit at 0 with the full generated shape at 100.");
             foreach (int preset in Presets)
                 if (OverlayButton(new GUIContent(preset.ToString(), preset == 0 ? "Show the original fit." :
-                    preset == 50 ? "Check the fit halfway through the change." : "Show the full fit. Sculpting is available here."), preset == weight, GUILayout.Width(29)))
+                    preset == 50 ? "Check the fit halfway through the change." : "Show the full fit. Sculpting is available here."), preset == weight, GUILayout.Width(37)))
                     nextWeight = preset;
             if (nextWeight != weight)
             {
@@ -455,7 +455,7 @@ namespace MilltinaBreastGenerator
             OverlayHeading("View");
             for (int i = 0; i < ViewLabels.Length; i++)
             {
-                if (!OverlayButton(new GUIContent(ViewLabels[i], $"Reset the camera to the {ViewLabels[i].ToLowerInvariant()} view."), i == viewIndex, GUILayout.Width(46)))
+                if (!OverlayButton(new GUIContent(ViewLabels[i], $"Reset the camera to the {ViewLabels[i].ToLowerInvariant()} view."), i == viewIndex, GUILayout.MinWidth(42)))
                     continue;
                 pan = Vector3.zero;
                 viewIndex = i;
