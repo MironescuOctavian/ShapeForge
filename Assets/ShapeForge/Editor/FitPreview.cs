@@ -61,6 +61,8 @@ namespace MilltinaBreastGenerator
         private GUIStyle floatingButton;
         private GUIStyle floatingLabel;
         private GUIStyle hoverHelp;
+        private Rect toolbarHelpRect;
+        private bool showDisplay;
         private int selectedMesh;
         private bool isolateMesh;
         private GUIContent[] editableNames;
@@ -245,13 +247,18 @@ namespace MilltinaBreastGenerator
 
             HandleHistoryShortcut();
             HandleSpanShortcut();
-            var viewport = new Rect(0, 0, position.width, position.height);
             var toolbar = new Rect(16, 10, position.width - 32, position.height - 20);
             var input = Event.current;
+            if (input.type == EventType.MouseMove) Repaint();
             var toolbarFrame = new Rect(0, 0, position.width, toolbar.y + toolbarHeight + 8);
-            float meshPanelWidth = Mathf.Clamp(position.width * .36f, 260f, 380f);
-            var meshPanel = new Rect(position.width - meshPanelWidth - 12, toolbarFrame.yMax + 8, meshPanelWidth, 66);
-            bool overControls = toolbarFrame.Contains(input.mousePosition) || meshPanel.Contains(input.mousePosition);
+            var footer = new Rect(0, position.height - 32, position.width, 32);
+            var viewport = new Rect(0, toolbarFrame.yMax, position.width, Mathf.Max(1, footer.y - toolbarFrame.yMax));
+            var viewControls = new Rect(12, viewport.y + 8, 350, 30);
+            var display = new Rect(position.width - 104, viewport.y + 8, 92, 30);
+            var displayOptions = new Rect(position.width - 219, display.yMax + 4, 207, 30);
+            bool overControls = toolbarFrame.Contains(input.mousePosition) || footer.Contains(input.mousePosition) ||
+                viewControls.Contains(input.mousePosition) || display.Contains(input.mousePosition) ||
+                (showDisplay && displayOptions.Contains(input.mousePosition));
             bool repaint = input.type == EventType.Repaint;
             if (repaint)
             {
@@ -274,30 +281,40 @@ namespace MilltinaBreastGenerator
                     }
                 }
             }
-            if (repaint) EditorGUI.DrawRect(meshPanel, new Color(.105f, .102f, .095f, .94f));
-            using (new GUILayout.AreaScope(new Rect(meshPanel.x + 8, meshPanel.y + 6, meshPanel.width - 16, 58)))
+            using (new GUILayout.AreaScope(viewControls))
+                using (new EditorGUILayout.HorizontalScope()) DrawViews();
+            using (new GUILayout.AreaScope(display))
+                if (OverlayButton(new GUIContent("Display ▾", "Show visibility and picking options."), showDisplay))
+                    showDisplay = !showDisplay;
+            if (showDisplay)
             {
-                using (new EditorGUILayout.HorizontalScope()) DrawMeshPicker();
-                using (new EditorGUILayout.HorizontalScope()) DrawVisibility();
+                if (repaint) EditorGUI.DrawRect(displayOptions, new Color(.105f, .102f, .095f, .96f));
+                using (new GUILayout.AreaScope(new Rect(displayOptions.x + 8, displayOptions.y + 4, 191, 25)))
+                    using (new EditorGUILayout.HorizontalScope()) DrawVisibility();
             }
+
+            if (repaint) EditorGUI.DrawRect(footer, new Color(.105f, .102f, .095f, 1f));
+            using (new GUILayout.AreaScope(new Rect(12, footer.y + 5, footer.width - 24, 22)))
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                string line = string.IsNullOrEmpty(status) ? editableNames[selectedMesh].text : status.Split('\n')[0];
+                GUILayout.Label(new GUIContent(line, status), EditorStyles.whiteMiniLabel, GUILayout.ExpandWidth(true));
+                if (crossings.Count > 0)
+                    showClipMarkers = EditorGUILayout.ToggleLeft("Show markers", showClipMarkers, GUILayout.Width(106));
+            }
+
             if (!repaint)
                 DrawViewport(viewport, overControls);
             else if (!string.IsNullOrEmpty(GUI.tooltip))
-                DrawHoverHelp(GUI.tooltip, meshPanel.x - 24);
-        }
-
-        private void DrawHoverHelp(string tip, float availableWidth)
-        {
-            hoverHelp ??= new GUIStyle(EditorStyles.wordWrappedLabel) { fontSize = 15, normal = { textColor = Color.white } };
-            var style = hoverHelp;
-            float width = Mathf.Min(availableWidth, 450);
-            float height = style.CalcHeight(new GUIContent(tip), width - 16) + 12;
-            var box = new Rect(12, toolbarHeight + 26, width, height);
-            EditorGUI.DrawRect(box, new Color(.105f, .102f, .095f, 1));
-            var color = GUI.contentColor;
-            GUI.contentColor = Color.white;
-            GUI.Label(new Rect(box.x + 8, box.y + 5, box.width - 16, box.height - 10), tip, style);
-            GUI.contentColor = color;
+            {
+                hoverHelp ??= new GUIStyle(EditorStyles.whiteMiniLabel)
+                {
+                    alignment = TextAnchor.MiddleCenter, wordWrap = true, fontSize = 12
+                };
+                var help = toolbarHelpRect;
+                help.position += toolbar.position;
+                GUI.Label(help, GUI.tooltip, hoverHelp);
+            }
         }
 
         private static void LastControlHelp(string tip) =>
@@ -305,51 +322,40 @@ namespace MilltinaBreastGenerator
 
         private void DrawToolbar(float width)
         {
-            float framePickerWidth = (frameWeights.Length > 1 ? 100f : 0f) + 65f;
-            bool wide = width >= 940f + framePickerWidth;
-            bool fitAndView = width >= 735f + framePickerWidth;
+            bool compact = width < 900;
+            bool fitOnFirstRow = width >= (frameWeights.Length > 1 ? 805 : 705);
             using (new EditorGUILayout.HorizontalScope())
             {
-                DrawWeight(136f);
-                if (fitAndView)
-                {
-                    if (wide)
-                        GroupDivider();
-                    DrawViews();
-                }
+                using (new EditorGUILayout.HorizontalScope(GUILayout.Width(fitOnFirstRow ? 290 : Mathf.Min(width, 400))))
+                    DrawMeshPicker();
+                if (fitOnFirstRow) DrawWeight(136f);
                 GUILayout.FlexibleSpace();
             }
-            if (!fitAndView)
-                using (new EditorGUILayout.HorizontalScope()) DrawViews();
 
-            RowDivider();
             using (new EditorGUILayout.HorizontalScope())
             {
                 DrawEditTools();
-                GUILayout.FlexibleSpace();
-                if (wide)
-                    DrawHistory();
-            }
-            if (!wide || straighten || sculpt)
-            {
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    if (straighten || sculpt)
-                        DrawToolSettings();
+                if (compact)
                     GUILayout.FlexibleSpace();
-                    if (!wide && !sculpt && !straighten)
-                        DrawHistory();
+                else
+                {
+                    ReserveToolbarHelp();
+                    DrawHistory();
                 }
             }
+            if (compact) ReserveToolbarHelp();
 
-            if (!wide && (sculpt || straighten))
-            {
+            // Narrow windows keep the complete fit and history controls on their own rows.
+            if (!fitOnFirstRow)
+                using (new EditorGUILayout.HorizontalScope()) DrawWeight(136f);
+            if (compact)
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     GUILayout.FlexibleSpace();
                     DrawHistory();
                 }
-            }
+            if (straighten || sculpt)
+                using (new EditorGUILayout.HorizontalScope()) DrawToolSettings();
 
             if (sculpt)
             {
@@ -375,16 +381,12 @@ namespace MilltinaBreastGenerator
                 OverlayLabel(hint, EditorStyles.wordWrappedMiniLabel);
             }
 
-            if (!string.IsNullOrEmpty(status))
-            {
-                string line = status.Split('\n')[0];
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    GUILayout.Label(new GUIContent(line, status), EditorStyles.wordWrappedMiniLabel, GUILayout.ExpandWidth(true));
-                    if (crossings.Count > 0)
-                        showClipMarkers = EditorGUILayout.ToggleLeft("Show markers", showClipMarkers, GUILayout.Width(106));
-                }
-            }
+        }
+
+        private void ReserveToolbarHelp()
+        {
+            var rect = GUILayoutUtility.GetRect(0, 31, GUILayout.ExpandWidth(true));
+            if (Event.current.type == EventType.Repaint) toolbarHelpRect = rect;
         }
 
         private void DrawVertexSize()
@@ -423,24 +425,6 @@ namespace MilltinaBreastGenerator
             bool clicked = GUI.Button(button, content, floatingButton);
             floatingButton.normal.textColor = oldColor;
             return clicked;
-        }
-
-        private static void RowDivider()
-        {
-            GUILayout.Space(4);
-            var line = GUILayoutUtility.GetRect(0, 1, GUILayout.ExpandWidth(true));
-            if (Event.current.type == EventType.Repaint)
-                EditorGUI.DrawRect(line, new Color(.73f, .62f, .44f, .20f));
-            GUILayout.Space(4);
-        }
-
-        private static void GroupDivider()
-        {
-            GUILayout.Space(7);
-            var line = GUILayoutUtility.GetRect(1, 23, GUILayout.Width(1));
-            if (Event.current.type == EventType.Repaint)
-                EditorGUI.DrawRect(line, new Color(.73f, .62f, .44f, .25f));
-            GUILayout.Space(7);
         }
 
         private void OverlayLabel(string label, GUIStyle source)
@@ -483,7 +467,6 @@ namespace MilltinaBreastGenerator
 
         private void DrawViews()
         {
-            OverlayHeading("View");
             for (int i = 0; i < ViewLabels.Length; i++)
             {
                 string label = i == 1 && viewIndex == 1 ? (leftSide ? "Side: Left" : "Side: Right") : ViewLabels[i];
