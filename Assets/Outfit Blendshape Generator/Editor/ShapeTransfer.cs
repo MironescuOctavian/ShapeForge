@@ -762,6 +762,10 @@ namespace MilltinaBreastGenerator
                 groupAtVertex[i] = group;
             }
 
+            var uv = mesh.uv;
+            bool transportTangents = tangentDeltas != null && uv.Length == positions.Length;
+            var oldU = transportTangents ? new Vector3[positions.Length] : null;
+            var newU = transportTangents ? new Vector3[positions.Length] : null;
             var before = new Vector3[groups.Count];
             var after = new Vector3[groups.Count];
             for (int submesh = 0; submesh < mesh.subMeshCount; submesh++)
@@ -776,6 +780,19 @@ namespace MilltinaBreastGenerator
                     var ac = positions[c] - positions[a];
                     var oldFace = Vector3.Cross(ab, ac);
                     var newFace = Vector3.Cross(ab + deltas[b] - deltas[a], ac + deltas[c] - deltas[a]);
+                    if (transportTangents)
+                    {
+                        var uvB = uv[b] - uv[a];
+                        var uvC = uv[c] - uv[a];
+                        float det = uvB.x * uvC.y - uvC.x * uvB.y;
+                        if (Mathf.Abs(det) > 1e-10f)
+                        {
+                            var rest = ((ab * uvC.y - ac * uvB.y) / det).normalized * oldFace.magnitude;
+                            var moved = (((ab + deltas[b] - deltas[a]) * uvC.y - (ac + deltas[c] - deltas[a]) * uvB.y) / det).normalized * oldFace.magnitude;
+                            oldU[a] += rest; oldU[b] += rest; oldU[c] += rest;
+                            newU[a] += moved; newU[b] += moved; newU[c] += moved;
+                        }
+                    }
                     before[groupAtVertex[a]] += oldFace;
                     before[groupAtVertex[b]] += oldFace;
                     before[groupAtVertex[c]] += oldFace;
@@ -789,7 +806,7 @@ namespace MilltinaBreastGenerator
             {
                 var from = before[groupAtVertex[i]];
                 var to = after[groupAtVertex[i]];
-                if (from.Equals(to) || from.sqrMagnitude < 1e-20f || to.sqrMagnitude < 1e-20f)
+                if (from.sqrMagnitude < 1e-20f || to.sqrMagnitude < 1e-20f)
                     continue;
 
                 var a = from / from.magnitude;
@@ -802,7 +819,16 @@ namespace MilltinaBreastGenerator
                 if (tangentDeltas != null)
                 {
                     Vector3 tangent = tangents[i];
-                    tangentDeltas[i] = rotation * tangent - tangent;
+                    var moved = rotation * tangent;
+                    if (transportTangents)
+                    {
+                        var normal = rotation * normals[i];
+                        var restDir = Vector3.ProjectOnPlane(rotation * oldU[i], normal);
+                        var movedDir = Vector3.ProjectOnPlane(newU[i], normal);
+                        if (restDir.sqrMagnitude > 1e-20f && movedDir.sqrMagnitude > 1e-20f)
+                            moved = Quaternion.AngleAxis(Vector3.SignedAngle(restDir, movedDir, normal), normal) * moved;
+                    }
+                    tangentDeltas[i] = moved - tangent;
                 }
             }
         }
