@@ -20,6 +20,7 @@ namespace MilltinaBreastGenerator
     internal struct GeneratedShape
     {
         public string name;
+        public bool reverse;
         public SyncChange syncChange;
         public string bodyPath;
     }

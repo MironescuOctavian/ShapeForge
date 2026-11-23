@@ -4,6 +4,8 @@ using UnityEngine;
 
 namespace MilltinaBreastGenerator
 {
+    internal enum BodyReference { Neutral, OtherActiveShapes, OtherActiveShapesAndTargetAt100 }
+
     internal static class ShapeTransfer
     {
         internal const string Shape = "(No bra)Breasts_Small";
@@ -85,6 +87,22 @@ namespace MilltinaBreastGenerator
             return collapsed > 0 && collapsed * 3 >= affected;
         }
 
+        internal static Vector3[] ReferencePositions(SkinnedMeshRenderer renderer, string target, BodyReference mode)
+        {
+            if (mode == BodyReference.Neutral) return null;
+            var mesh = renderer.sharedMesh;
+            var positions = mesh.vertices;
+            for (int i = 0; i < mesh.blendShapeCount; i++)
+            {
+                var name = mesh.GetBlendShapeName(i);
+                float weight = name == target ? (mode == BodyReference.OtherActiveShapesAndTargetAt100 ? 100 : 0) : renderer.GetBlendShapeWeight(i);
+                if (weight == 0) continue;
+                var delta = ReadSourceDeltas(mesh, name, weight);
+                for (int j = 0; j < delta.Length; j++) positions[j] += delta[j];
+            }
+            return positions;
+        }
+
         internal sealed class FitSource
         {
             internal readonly string ShapeName;
@@ -95,11 +113,16 @@ namespace MilltinaBreastGenerator
             private TriangleSurface fittedSurface;
             internal readonly TransferField Field;
 
-            internal FitSource(Mesh mesh, string shape, TransferMethod method = TransferMethod.Barycentric, float weight = 100, Vector3[] reference = null)
+            internal FitSource(Mesh mesh, string shape, TransferMethod method = TransferMethod.Barycentric, float weight = 100, Vector3[] reference = null, bool reverse = false)
             {
                 ShapeName = shape;
                 Positions = reference ?? mesh.vertices;
-                Deltas = ReadSourceDeltas(mesh, shape, weight);
+                Deltas = ReadSourceDeltas(mesh, shape, reverse ? 100 - weight : weight);
+                if (reverse)
+                {
+                    var authored = ReadSourceDeltas(mesh, shape);
+                    for (int i = 0; i < Deltas.Length; i++) Deltas[i] -= authored[i];
+                }
                 foreach (var delta in Deltas)
                 {
                     if (!float.IsFinite(delta.sqrMagnitude))
@@ -320,6 +343,13 @@ namespace MilltinaBreastGenerator
                 weights.Add(weight);
             }
             if (!weights.Contains(100f)) { weights.Add(100f); weights.Sort(); }
+            if (reverse)
+            {
+                weights.RemoveAll(w => w >= 100);
+                for (int i = 0; i < weights.Count; i++) weights[i] = 100 - weights[i];
+                weights.Reverse();
+                weights.Add(100);
+            }
             return weights;
         }
 
@@ -519,34 +549,36 @@ namespace MilltinaBreastGenerator
         }
 
 
-        internal static Bounds ShapeBounds(SkinnedMeshRenderer body, string shape)
+        internal static Bounds ShapeBounds(SkinnedMeshRenderer body, string shape, BodyReference mode = BodyReference.Neutral)
         {
-            var positions = body.sharedMesh.vertices;
+            var positions = ReferencePositions(body, shape, mode) ?? body.sharedMesh.vertices;
             var weights = FrameWeights(body.sharedMesh, shape);
             var bounds = new Bounds(body.bounds.center, Vector3.zero);
             bool first = true;
             foreach (float weight in weights)
             {
-            var deltas = ReadSourceDeltas(body.sharedMesh, shape, weight);
-            for (int i = 0; i < positions.Length; i++)
-            {
-                if (deltas[i].sqrMagnitude <= 1e-8f)
-                    continue;
-                var point = body.transform.TransformPoint(positions[i]);
-                if (first)
+                var deltas = ReadSourceDeltas(body.sharedMesh, shape, weight);
+                for (int i = 0; i < positions.Length; i++)
                 {
-                    bounds.center = point;
-                    first = false;
+                    if (deltas[i].sqrMagnitude <= 1e-8f)
+                        continue;
+                    var point = body.transform.TransformPoint(positions[i]);
+                    if (first)
+                    {
+                        bounds.center = point;
+                        first = false;
+                    }
+                    bounds.Encapsulate(point);
                 }
-                bounds.Encapsulate(point);
-            }
             }
             return bounds;
         }
 
-        internal static Func<SkinnedMeshRenderer, bool> ShapeOverlap(SkinnedMeshRenderer body, string shape, TransferMethod method = TransferMethod.Barycentric)
+        internal static Func<SkinnedMeshRenderer, bool> ShapeOverlap(SkinnedMeshRenderer body, string shape, TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral)
         {
-            var sources = FrameWeights(body.sharedMesh, shape).ConvertAll(weight => new FitSource(body.sharedMesh, shape, method, weight));
+            var reference = ReferencePositions(body, shape, mode);
+            bool reverse = mode == BodyReference.OtherActiveShapesAndTargetAt100;
+            var sources = FrameWeights(body.sharedMesh, shape, reverse).ConvertAll(weight => new FitSource(body.sharedMesh, shape, method, weight, reference, reverse));
             var worldToBody = body.transform.worldToLocalMatrix;
             return outfit =>
             {
@@ -554,22 +586,22 @@ namespace MilltinaBreastGenerator
                 var vertices = outfit.sharedMesh.vertices;
                 foreach (var source in sources)
                 {
-                if (source.Peak <= 1e-6f) continue;
-                var deltas = source.Deltas;
-                foreach (var vertex in vertices)
-                {
-                    var point = matrix.MultiplyPoint3x4(vertex);
-                    if (!source.QueryRegion.Contains(point) || !source.OriginalSurface.FindClosest(point, source.Radius,
-                        out var triangle, out var barycentric, out var offset))
-                        continue;
+                    if (source.Peak <= 1e-6f) continue;
+                    var deltas = source.Deltas;
+                    foreach (var vertex in vertices)
+                    {
+                        var point = matrix.MultiplyPoint3x4(vertex);
+                        if (!source.QueryRegion.Contains(point) || !source.OriginalSurface.FindClosest(point, source.Radius,
+                            out var triangle, out var barycentric, out var offset))
+                            continue;
 
-                    var displacement = deltas[triangle.A] * barycentric.x +
-                        deltas[triangle.B] * barycentric.y + deltas[triangle.C] * barycentric.z;
-                    if (source.Field != null)
-                        displacement = source.Field.Sample(triangle, point - offset, displacement);
-                    if (displacement.magnitude >= source.Peak * 0.001f)
-                        return true;
-                }
+                        var displacement = deltas[triangle.A] * barycentric.x +
+                            deltas[triangle.B] * barycentric.y + deltas[triangle.C] * barycentric.z;
+                        if (source.Field != null)
+                            displacement = source.Field.Sample(triangle, point - offset, displacement);
+                        if (displacement.magnitude >= source.Peak * 0.001f)
+                            return true;
+                    }
                 }
                 return false;
             };

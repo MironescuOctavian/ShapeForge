@@ -11,16 +11,36 @@ namespace MilltinaBreastGenerator
         private readonly List<(float Weight, LayerFrame Frame)> frames = new();
         private readonly string shape;
 
-        internal LayerFit(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape = ShapeTransfer.Shape, TransferMethod method = TransferMethod.Barycentric, Vector3[] reference = null)
+        private readonly Dictionary<(SkinnedMeshRenderer, float), Vector3[]> edits = new();
+        internal readonly bool Reverse;
+        internal float[] Weights => frames.Select(frame => frame.Weight).ToArray();
+
+        internal Vector3[] Correction(SkinnedMeshRenderer renderer, float weight) =>
+            edits.TryGetValue((renderer, weight), out var motion) ? motion : null;
+
+        internal void SetCorrection(SkinnedMeshRenderer renderer, float weight, Vector3[] motion)
+        {
+            edits[(renderer, weight)] = motion;
+        }
+
+        private Vector3[] EditedMotion(SkinnedMeshRenderer renderer, float weight, LayerFrame frame, out string message)
+        {
+            var original = frame.Motion(renderer, out message);
+            return edits.TryGetValue((renderer, weight), out var edit) ? edit : original;
+        }
+
+        internal LayerFit(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape = ShapeTransfer.Shape, TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral)
         {
             this.shape = shape;
-            var weights = ShapeTransfer.FrameWeights(body.sharedMesh, shape);
+            Reverse = mode == BodyReference.OtherActiveShapesAndTargetAt100;
+            var reference = ShapeTransfer.ReferencePositions(body, shape, mode);
+            var weights = ShapeTransfer.FrameWeights(body.sharedMesh, shape, Reverse);
             foreach (float weight in weights)
-                frames.Add((weight, new LayerFrame(body, renderers, shape, method, weight, weights.Count > 1, reference)));
+                frames.Add((weight, new LayerFrame(body, renderers, shape, method, weight, weights.Count > 1, reference, Reverse)));
         }
 
         internal string Key(SkinnedMeshRenderer renderer) =>
-            string.Join("|", frames.Select(frame => Hash128.Compute(frame.Frame.Motion(renderer, out _)).ToString()));
+            (Reverse ? "reverse:" : "") + string.Join("|", frames.Select(frame => Hash128.Compute(EditedMotion(renderer, frame.Weight, frame.Frame, out _)).ToString()));
 
         internal Mesh Build(SkinnedMeshRenderer renderer, out string diagnostic, Vector3[] endpoint = null)
         {
@@ -28,7 +48,7 @@ namespace MilltinaBreastGenerator
             diagnostic = "";
             foreach (var (weight, frame) in frames)
             {
-                var motion = frame.Motion(renderer, out string message);
+                var motion = EditedMotion(renderer, weight, frame, out string message);
                 if (weight == 100) diagnostic = message;
                 output.Add((weight, weight == 100 && endpoint != null ? endpoint : motion));
             }
@@ -100,12 +120,9 @@ namespace MilltinaBreastGenerator
         private readonly List<Piece> ordered = new();
         private readonly float radius;
 
-        private readonly string shape;
-
-        internal LayerFrame(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape, TransferMethod method, float weight, bool allowStationary, Vector3[] reference)
+        internal LayerFrame(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape, TransferMethod method, float weight, bool allowStationary, Vector3[] reference, bool reverse)
         {
-            this.shape = shape;
-            var source = new ShapeTransfer.FitSource(body.sharedMesh, shape, method, weight, reference);
+            var source = new ShapeTransfer.FitSource(body.sharedMesh, shape, method, weight, reference, reverse);
             radius = source.Peak * .20f;
             var worldToBody = body.transform.worldToLocalMatrix;
             foreach (var renderer in renderers)

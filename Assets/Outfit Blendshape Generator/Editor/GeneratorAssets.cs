@@ -108,7 +108,7 @@ namespace MilltinaBreastGenerator
             var baseMesh = sourceInfo ? sourceInfo.original : original;
             var bodyMesh = body.sharedMesh;
             var matrix = body.transform.worldToLocalMatrix * outfit.transform.localToWorldMatrix;
-            var sync = ModularAvatarSync.Plan(outfit, body, root, out var bodyPath, out var syncStatus, shape);
+            var sync = ModularAvatarSync.Plan(outfit, body, root, out var bodyPath, out var syncStatus, shape, fit?.Reverse == true);
             string scriptPath = AssetDatabase.GUIDToAssetPath(GeneratorScriptGuid);
             if (!scriptPath.StartsWith("Assets/", StringComparison.Ordinal))
                 throw new InvalidOperationException("Install the tool in a folder under Assets before generating meshes.");
@@ -148,7 +148,7 @@ namespace MilltinaBreastGenerator
                     info.name = "Milltina Mesh Source";
                     info.hideFlags = HideFlags.HideInHierarchy | HideFlags.HideInInspector;
                     info.original = baseMesh;
-                    var entry = new GeneratedShape { name = shape, syncChange = sync, bodyPath = bodyPath };
+                    var entry = new GeneratedShape { name = shape, reverse = fit?.Reverse == true, syncChange = sync, bodyPath = bodyPath };
                     info.shapes = sourceInfo ? sourceInfo.Entries.Append(entry).ToArray() : new[] { entry };
                     info.diagnostic = diagnostic;
                     AssetDatabase.AddObjectToAsset(info, generated);
@@ -157,7 +157,7 @@ namespace MilltinaBreastGenerator
                 }
 
                 AssignMesh(outfit, generated);
-                ModularAvatarSync.Apply(outfit, body, sync, bodyPath, shape);
+                ModularAvatarSync.Apply(outfit, body, sync, bodyPath, shape, fit?.Reverse == true);
                 Undo.CollapseUndoOperations(undoGroup);
                 return $"{(create ? "Generated" : "Reused")} {shape} for {outfit.name}. {info.diagnostic}\n{syncStatus}";
             }

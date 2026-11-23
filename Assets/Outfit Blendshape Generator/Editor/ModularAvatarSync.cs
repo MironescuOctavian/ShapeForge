@@ -12,7 +12,7 @@ namespace MilltinaBreastGenerator
         internal static bool Available => ComponentType != null;
 
         internal static SyncChange Plan(SkinnedMeshRenderer outfit, SkinnedMeshRenderer body,
-            Transform root, out string bodyPath, out string status, string shape)
+            Transform root, out string bodyPath, out string status, string shape, bool reverse = false)
         {
             bodyPath = null;
             if (!Available)
@@ -45,7 +45,7 @@ namespace MilltinaBreastGenerator
                 if (!TargetsShape(binding, shape))
                     continue;
 
-                status = Matches(binding, body.gameObject, bodyPath, shape)
+                status = Matches(binding, body.gameObject, bodyPath, shape, reverse)
                     ? "Using the existing MA Blendshape Sync binding."
                     : "An existing MA binding targets this shape. Review it in the Inspector to sync the slider.";
                 return SyncChange.None;
@@ -56,7 +56,7 @@ namespace MilltinaBreastGenerator
         }
 
         internal static void Apply(SkinnedMeshRenderer outfit, SkinnedMeshRenderer body,
-            SyncChange change, string bodyPath, string shape)
+            SyncChange change, string bodyPath, string shape, bool reverse = false)
         {
             if (change == SyncChange.None)
                 return;
@@ -76,8 +76,9 @@ namespace MilltinaBreastGenerator
                 target.objectReferenceValue = body.gameObject;
 
             var curve = binding.FindPropertyRelative("RemapCurve");
+            if (reverse && curve == null) throw new InvalidOperationException("This Modular Avatar version cannot synchronize an inverted slider.");
             if (curve != null)
-                curve.animationCurveValue = AnimationCurve.Linear(0, 0, 100, 100);
+                curve.animationCurveValue = AnimationCurve.Linear(0, reverse ? 100 : 0, 100, reverse ? 0 : 100);
             var valid = binding.FindPropertyRelative("RemapCurveIsValid");
             if (valid != null)
                 valid.boolValue = true;
@@ -101,7 +102,7 @@ namespace MilltinaBreastGenerator
                 var binding = bindings.GetArrayElementAtIndex(i);
                 if (!TargetsShape(binding, info.name))
                     continue;
-                if (!Matches(binding, null, info.bodyPath, info.name) || owned >= 0)
+                if (!Matches(binding, null, info.bodyPath, info.name, info.reverse) || owned >= 0)
                     return false;
                 owned = i;
             }
@@ -136,7 +137,7 @@ namespace MilltinaBreastGenerator
                 == shape;
         }
 
-        private static bool Matches(SerializedProperty binding, GameObject body, string bodyPath, string shape)
+        private static bool Matches(SerializedProperty binding, GameObject body, string bodyPath, string shape, bool reverse)
         {
             if (binding.FindPropertyRelative("Blendshape").stringValue != shape)
                 return false;
@@ -148,9 +149,9 @@ namespace MilltinaBreastGenerator
                 return false;
 
             var curve = binding.FindPropertyRelative("RemapCurve")?.animationCurveValue;
-            return curve == null || curve.length < 2 ||
-                (curve.length == 2 && curve[0].time == 0 && curve[0].value == 0 &&
-                 curve[1].time == 100 && curve[1].value == 100);
+            return ((!reverse) && (curve == null || curve.length < 2)) || (curve != null &&
+                (curve.length == 2 && curve[0].time == 0 && curve[0].value == (reverse ? 100 : 0) &&
+                 curve[1].time == 100 && curve[1].value == (reverse ? 0 : 100)));
         }
     }
 }
