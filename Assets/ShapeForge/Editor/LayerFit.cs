@@ -21,7 +21,8 @@ namespace MilltinaBreastGenerator
 
         internal void SetCorrection(SkinnedMeshRenderer renderer, float weight, Vector3[] motion)
         {
-            edits[(renderer, weight)] = motion;
+            if (motion == null) edits.Remove((renderer, weight));
+            else edits[(renderer, weight)] = motion;
         }
 
         internal void SetProtection(SkinnedMeshRenderer renderer, bool[] mask)

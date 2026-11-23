@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Clipping scans list patches for the selected piece. Choose a patch to frame it, then preview a local fix and apply or cancel.
+- Preview shows whether the whole mesh or a vertex selection is editable, and flags unsaved corrections.
+
 - Added drag-to-paint Clipping, Restore and Relax brushes. Clipping has an independent surface gap, strength and body or garment reference. Restore can recover generated motion or align the original fabric shape locally.
 - Added per-garment box selection. Drag to replace, Shift-drag to add, Ctrl/Cmd-drag to subtract, Alt-drag to select through, and Esc to clear. Existing selections limit corrections until cleared.
 

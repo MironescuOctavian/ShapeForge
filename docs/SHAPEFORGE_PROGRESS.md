@@ -72,3 +72,9 @@ On the private Midnight Bikini fixture at 100%, the 95th-percentile sampled clea
 Preview now has drag-to-paint Clipping, Restore and Relax tools. Clipping uses a chosen body or garment surface and an adjustable gap and strength. Restore supports generated deltas and local rigid alignment of the original fabric. Relax is bounded and leaves open boundaries in place. Box selection is per garment and restricts edits without persisting a selector on the avatar.
 
 Unity 6000.0.67f1 passed clean import, synthetic restore alignment and relaxation checks, the existing garment and Modular Avatar regression suite, and a graphical box interaction check for replace, add, subtract and clear. Rebuilt package SHA-256 is DA634F2B5F598CA0BB1F8E09AE0B45C989B0FE6722EF6571BF66609FF41464F2.
+
+## Clipping preview workflow
+
+Scan Clipping lists patches for the selected outfit piece. Choose one to frame it. Preview fix temporarily swaps a preview mesh and keeps the stored frame correction unchanged. Apply creates a single Undo step and scans again. Cancel restores the original draft mesh. The footer shows the vertex selection and unsaved corrections.
+
+Unity 6000.0.67f1 clean import and accuracy checks passed. Validation/ClippingFlowCheck.cs verifies scan, preview, cancel, apply and Undo using a known intersection. Run it in Unity batch mode with -executeMethod ClippingFlowCheck.Run. The private preview correction suite also passed. Package SHA-256 is 0F304312009ECD0A01D7C9FAD4C7EF9E33FA2D98B0822C69A9375EDE1EF75EC7.
