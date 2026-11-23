@@ -12,13 +12,6 @@ namespace MilltinaBreastGenerator
             "Choose an outfit and a body shape. Preview the checked pieces, then Generate to save the fit. Hover over a control for help.";
 
         private const string OutfitSessionKey = "Octa.OutfitBlendshapeGenerator.Outfit";
-        private static readonly GUIContent[] ReferenceLabels =
-        {
-            new GUIContent("Body at 0%"),
-            new GUIContent("Body at 0% + other active shapes"),
-            new GUIContent("Body at 100% + other active shapes (reverse)")
-        };
-        [SerializeField] private BodyReference referenceMode;
         [SerializeField] private TransferMethod transferMethod;
         [SerializeField] private bool reviewHiddenShapes;
         private Mesh inspectedBody;
@@ -40,7 +33,6 @@ namespace MilltinaBreastGenerator
         private Vector2 pieceScroll;
         private bool refreshSelection = true;
         private bool showAdvanced;
-        private float[] referenceWeights = Array.Empty<float>();
         private bool changingPlayMode;
         private GUIStyle frame;
         private GUIStyle heading;
@@ -212,19 +204,6 @@ namespace MilltinaBreastGenerator
         private void DrawEditor()
         {
             RecoverOutfit();
-            var priorBody = manualBody ? manualBody : detectedBody;
-            if (referenceMode != BodyReference.Neutral && priorBody && priorBody.sharedMesh)
-            {
-                int count = priorBody.sharedMesh.blendShapeCount;
-                if (referenceWeights.Length != count) referenceWeights = new float[count];
-                for (int i = 0; i < count; i++)
-                {
-                    float value = priorBody.GetBlendShapeWeight(i);
-                    if (value == referenceWeights[i]) continue;
-                    referenceWeights[i] = value;
-                    refreshSelection = true;
-                }
-            }
             if (refreshSelection || pieces.Any(p => !p.Renderer || p.Mesh != p.Renderer.sharedMesh))
                 RefreshPieces();
 
@@ -268,14 +247,8 @@ namespace MilltinaBreastGenerator
             {
                 var nextMethod = (TransferMethod)EditorGUILayout.EnumPopup(new GUIContent("Transfer Method",
                     "Start with Barycentric, the default. Try Weighted for loose cloth or RBF for a broad change like the belly. Compare in Preview."), transferMethod);
-                var nextReference = (BodyReference)EditorGUILayout.Popup(
-                    new GUIContent("Outfit already fits", "Choose the body state the original outfit was made for. This controls the transfer starting point."),
-                    (int)referenceMode, ReferenceLabels);
-                if (nextReference == BodyReference.OtherActiveShapesAndTargetAt100)
-                    EditorGUILayout.HelpBox("Reverse fit: Preview Fit 0 uses body 100. Fit 100 moves toward body 0.", MessageType.Info);
-                if (nextMethod != transferMethod || nextReference != referenceMode)
+                if (nextMethod != transferMethod)
                 {
-                    referenceMode = nextReference;
                     transferMethod = nextMethod;
                     results.Clear();
                     summary = null;
@@ -355,7 +328,7 @@ namespace MilltinaBreastGenerator
                     bool openPreview = GUILayout.Button(new GUIContent("Preview", "See the fit and make local corrections before saving."), GUILayout.Height(34), GUILayout.Width(actionWidth));
 
                     if (openPreview)
-                        FitPreview.Open(body, selected.Select(p => p.Renderer).ToArray(), sourceShapeName, transferMethod, referenceMode);
+                        FitPreview.Open(body, selected.Select(p => p.Renderer).ToArray(), sourceShapeName, transferMethod);
                     GUI.backgroundColor = new Color(1f, .74f, .34f);
                     bool generate = GUILayout.Button(new GUIContent($"Generate ({selected.Length})", "Save the chosen shape on each checked piece. Existing outfit shapes stay available."),
                         GUILayout.Height(34), GUILayout.Width(actionWidth));
@@ -365,7 +338,7 @@ namespace MilltinaBreastGenerator
                         LayerFit fit;
                         try
                         {
-                            fit = new LayerFit(body, selected.Select(p => p.Renderer).ToArray(), sourceShapeName, transferMethod, referenceMode);
+                            fit = new LayerFit(body, selected.Select(p => p.Renderer).ToArray(), sourceShapeName, transferMethod);
                         }
                         catch (InvalidOperationException exception)
                         {
@@ -482,7 +455,7 @@ namespace MilltinaBreastGenerator
             {
                 try
                 {
-                    overlapsRegion = ShapeTransfer.ShapeOverlap(body, sourceShapeName, transferMethod, referenceMode);
+                    overlapsRegion = ShapeTransfer.ShapeOverlap(body, sourceShapeName, transferMethod);
                 }
                 catch (InvalidOperationException)
                 {

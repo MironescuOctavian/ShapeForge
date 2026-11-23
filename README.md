@@ -13,7 +13,7 @@ ShapeForge transfers body blendshapes to clothing already made for the same avat
 ## What it does
 
 - Transfers shapes using Barycentric, Weighted or RBF interpolation. Barycentric is the default.
-- Preserves authored positive blendshape frames and supports alternate authored body states, including reverse transfer.
+- Preserves authored positive blendshape frames.
 - Fits selected pieces together and checks for suspect cloth and body intersections.
 - Provides a separate avatar preview with fit scrubbing, fixed views, isolation, sculpting, smoothing, Straighten Span, and correction history.
 - Saves a separate mesh asset, preserving original mesh data, skinning, and existing shapes. Restore removes generated shapes.
@@ -27,7 +27,7 @@ In Unity, choose **Assets → Import Package → Custom Package**, select the pa
 ## Transfer a shape
 
 1. Select the **Body Mesh**, **Outfit**, and **Source Shape**. You can drag a clothing object or the parent of several pieces from the Hierarchy.
-2. Check the eligible pieces you want to fit. Open **Advanced** to choose a transfer method or an authored body state.
+2. Check the eligible pieces you want to fit. Open **Advanced** to choose a transfer method.
 3. Open **Preview** and compare **0**, **50**, and **100**. Isolate pieces or run **Check Clipping** when needed.
 4. Use **Generate** for the automatic fit or **Save Corrections** after editing the preview. Use **Restore** to remove generated shapes.
 
