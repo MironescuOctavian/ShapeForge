@@ -6,9 +6,6 @@ ShapeForge is a Unity Editor tool designed to generate accurate outfit blendshap
 
 Built with VRChat avatar creators in mind, ShapeForge focuses on precise mesh deformation, garment preservation, and an intuitive editing experience.
 
-![ShapeForge Preview](Documentation/screenshots/preview.png)
-
-*Screenshot placeholder — add an actual Unity preview before publishing.*
 
 ## Features
 
