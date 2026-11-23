@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added toolbar borders, group separators and aligned controls to match the Fit Editor layout.
+
 - Renamed Preview to Fit Editor. The outfit mesh picker leads the top row, tool help sits beside the active settings, and Sculpt, Vertex Control, Clipping, Restore Brush and Relax have dedicated tabs.
 
 - Clipping scans list patches for the selected piece. Choose a patch to frame it, then preview a local fix and apply or cancel.
