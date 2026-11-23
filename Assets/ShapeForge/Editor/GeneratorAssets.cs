@@ -122,7 +122,7 @@ namespace MilltinaBreastGenerator
 
             Undo.IncrementCurrentGroup();
             int undoGroup = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("Generate Milltina Blendshape");
+            Undo.SetCurrentGroupName("Generate ShapeForge Blendshape");
             string createdPath = null;
 
             try
@@ -145,7 +145,7 @@ namespace MilltinaBreastGenerator
                     createdPath = path;
 
                     info = ScriptableObject.CreateInstance<GeneratedMeshInfo>();
-                    info.name = "Milltina Mesh Source";
+                    info.name = "ShapeForge Mesh Source";
                     info.hideFlags = HideFlags.HideInHierarchy | HideFlags.HideInInspector;
                     info.original = baseMesh;
                     var entry = new GeneratedShape { name = shape, reverse = fit?.Reverse == true, syncChange = sync, bodyPath = bodyPath };
@@ -239,7 +239,7 @@ namespace MilltinaBreastGenerator
                 AssetDatabase.CreateAsset(mesh, path);
                 saved = true;
                 var metadata = ScriptableObject.CreateInstance<GeneratedMeshInfo>();
-                metadata.name = "Milltina Mesh Source";
+                metadata.name = "ShapeForge Mesh Source";
                 metadata.hideFlags = HideFlags.HideInHierarchy | HideFlags.HideInInspector;
                 metadata.original = info.original;
                 metadata.shapes = remaining;

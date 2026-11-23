@@ -47,3 +47,7 @@ The approved icon was unavailable. The README banner uses the requested charcoal
 ## Phase 4 verification
 
 See [release readiness](SHAPEFORGE_RELEASE_READINESS.md) for independently rerun evidence, regression fixes, the rebuilt package checksum and public release gates.
+
+## Unity folder rename
+
+The current local package at C:/Programming/Unity Tools/ShapeForge/ShapeForge.unitypackage imports under Assets/ShapeForge with its original Unity metadata. Clean import and AccuracyChecks.Run passed in Unity 6000.0.67f1. SHA-256 EBB8B73633B0E51890BE0D953748ECF4F53C8477D2DAF780AC4C323133D529E1.
