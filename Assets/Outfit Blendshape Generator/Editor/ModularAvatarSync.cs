@@ -149,9 +149,19 @@ namespace MilltinaBreastGenerator
                 return false;
 
             var curve = binding.FindPropertyRelative("RemapCurve")?.animationCurveValue;
-            return ((!reverse) && (curve == null || curve.length < 2)) || (curve != null &&
-                (curve.length == 2 && curve[0].time == 0 && curve[0].value == (reverse ? 100 : 0) &&
-                 curve[1].time == 100 && curve[1].value == (reverse ? 0 : 100)));
+            if (curve == null || curve.length < 2)
+                return !reverse;
+            if (curve.length != 2)
+                return false;
+
+            var first = curve[0];
+            var last = curve[1];
+            float slope = reverse ? -1 : 1;
+            return first.time == 0 && first.value == (reverse ? 100 : 0) &&
+                   last.time == 100 && last.value == (reverse ? 0 : 100) &&
+                   first.outTangent == slope && last.inTangent == slope &&
+                   (first.weightedMode & WeightedMode.Out) == WeightedMode.None &&
+                   (last.weightedMode & WeightedMode.In) == WeightedMode.None;
         }
     }
 }
