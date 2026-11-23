@@ -28,8 +28,8 @@ In Unity, choose **Assets → Import Package → Custom Package**, select the pa
 
 1. Select the **Body Mesh**, **Outfit**, and **Source Shape**. You can drag a clothing object or the parent of several pieces from the Hierarchy.
 2. Check the eligible pieces you want to fit. Open **Advanced** to choose a transfer method.
-3. Open **Preview** and compare **0**, **50**, and **100**. Isolate pieces or run **Scan Clipping**. Choose a patch, click **Preview fix**, then adjust Gap and Strength and apply or cancel.
-4. In Sculpt, try **Clipping Brush**, **Restore Brush**, or **Relax**. Press **B** for box selection. Drag to replace, hold **Shift** to add or **Ctrl/Cmd** to subtract, and press **Esc** to clear.
+3. Open the **Fit Editor**. Choose an outfit mesh at the top left, then compare **0**, **50**, and **100**. In **Clipping**, scan the selected mesh, choose a patch, and preview a fix before applying it.
+4. Use **Sculpt**, **Clipping Brush**, **Restore Brush**, or **Relax** to correct the fit. In **Vertex Control** (**B**), drag to select, hold **Shift** to add or **Ctrl/Cmd** to subtract, or use **Straighten Span** for straps. Press **Esc** to clear a selection.
 5. Use **Generate** for the automatic fit or **Save Corrections** after editing the preview. Use **Restore** to remove generated shapes.
 
 ## Unity interface

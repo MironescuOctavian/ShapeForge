@@ -46,7 +46,13 @@ namespace MilltinaBreastGenerator
         private SkinnedMeshRenderer body;
         private string targetShape = ShapeTransfer.Shape;
         private enum Brush { Grab, PushOut, Smooth, Multiply, ClearSkin, ElasticDeform, Protect, Unprotect, Restore, Relax }
-        private static readonly string[] BrushNames = { "Grab", "Push Out", "Smooth", "Multiply", "Clipping Brush", "Elastic Deform", "Protect", "Unprotect", "Restore Brush", "Relax" };
+        private static readonly Brush[] SculptBrushes = { Brush.Grab, Brush.ElasticDeform, Brush.PushOut, Brush.Smooth, Brush.Multiply, Brush.Protect, Brush.Unprotect };
+        private static readonly string[] SculptBrushNames = { "Grab", "Elastic Deform", "Push Out", "Smooth", "Multiply", "Protect", "Unprotect" };
+        private enum Tool { Inspect, Sculpt, Vertices, Clipping, Restore, Relax }
+        private Tool tool;
+        private Brush sculptBrush;
+        private bool clippingBrush;
+        private string toolHelp;
         private Brush brushMode;
         private float brushStrength = .5f;
         private float brushGapMm = .5f;
@@ -85,7 +91,7 @@ namespace MilltinaBreastGenerator
         private GUIStyle floatingButton;
         private GUIStyle floatingLabel;
         private GUIStyle hoverHelp;
-        private string centerHelp;
+        private string controlHelp;
         private Rect toolbarHelpRect;
         private bool showDisplay;
         private int selectedMesh;
@@ -153,8 +159,6 @@ namespace MilltinaBreastGenerator
         private Vector2 strokeCurrent;
         private bool strokeInDepth;
         private Vector2 hoverMouse;
-        private static readonly GUIContent SculptHelp = new GUIContent("✎  Sculpt",
-            "Hover over clothing to see what moves. Left-drag to grab. Scroll during the drag to resize. Shift-drag moves in depth. Alt-grab to pick through the body. Edits apply at 100. Enable Left/right to mirror across the avatar.");
         private Vector2 strokeMouse;
         private float strokeDepth;
         private int strokeControl;
@@ -174,10 +178,11 @@ namespace MilltinaBreastGenerator
         internal static void Open(SkinnedMeshRenderer body, SkinnedMeshRenderer[] outfits, string shape = ShapeTransfer.Shape,
             TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral)
         {
-            var window = GetWindow<FitPreview>("ShapeForge Preview");
+            var window = GetWindow<FitPreview>("ShapeForge Fit Editor");
             window.wantsMouseMove = true;
             window.minSize = new Vector2(540, 360);
-            window.titleContent = new GUIContent($"ShapeForge Preview · {method}");
+            window.titleContent = new GUIContent("ShapeForge Fit Editor");
+            window.SelectTool(Tool.Inspect);
             window.Build(body, outfits, shape, method, mode);
             window.Show();
         }
@@ -286,7 +291,7 @@ namespace MilltinaBreastGenerator
             }
             if (preview == null)
             {
-                EditorGUILayout.LabelField("Open Preview from the generator to compare an outfit.");
+                EditorGUILayout.LabelField("Open the Fit Editor from the generator to compare an outfit.");
                 return;
             }
 
@@ -316,7 +321,12 @@ namespace MilltinaBreastGenerator
                 display.Contains(input.mousePosition) ||
                 (showDisplay && displayOptions.Contains(input.mousePosition));
             bool repaint = input.type == EventType.Repaint;
-            if (repaint) centerHelp = null;
+            if (repaint)
+            {
+                controlHelp = null;
+                toolHelp = null;
+                toolbarHelpRect = Rect.zero;
+            }
             if (repaint)
             {
                 DrawViewport(viewport, overControls);
@@ -372,115 +382,119 @@ namespace MilltinaBreastGenerator
 
             if (!repaint)
                 DrawViewport(viewport, overControls);
-            else if (!string.IsNullOrEmpty(centerHelp))
+            else if (toolbarHelpRect.width > 0)
             {
                 hoverHelp ??= new GUIStyle(EditorStyles.whiteMiniLabel)
                 {
-                    alignment = TextAnchor.MiddleCenter, wordWrap = true, fontSize = 11
+                    alignment = TextAnchor.MiddleLeft, wordWrap = true, fontSize = 11
                 };
                 var help = toolbarHelpRect;
                 help.position += toolbar.position;
-                GUI.Label(help, centerHelp, hoverHelp);
+                GUI.Label(help, controlHelp ?? toolHelp, hoverHelp);
             }
         }
 
-        private void LastControlHelp(string tip) => SetCenterHelp(GUILayoutUtility.GetLastRect(), tip);
+        private void LastControlHelp(string tip) => SetControlHelp(GUILayoutUtility.GetLastRect(), tip);
 
-        private void SetCenterHelp(Rect rect, string tip)
+        private void SetControlHelp(Rect rect, string tip)
         {
             if (Event.current.type == EventType.Repaint && !string.IsNullOrEmpty(tip) && rect.Contains(Event.current.mousePosition))
-                centerHelp = tip;
+                controlHelp = tip;
         }
 
         private void DrawToolbar(float width)
         {
-            bool compact = width < 900;
-            float fitWidth = frameWeights.Length > 1 ? 420 : 325;
+            float fitWidth = frameWeights.Length > 1 ? 450 : 350;
             bool fitOnFirstRow = width >= 290 + fitWidth + 96;
-            bool viewsOnFirstRow = width >= 290 + fitWidth + 340 + 96;
+            bool viewsOnFirstRow = width >= 290 + fitWidth + 350 + 96;
             using (new EditorGUILayout.HorizontalScope())
             {
-                using (new EditorGUILayout.HorizontalScope(GUILayout.Width(fitOnFirstRow ? 290 : Mathf.Min(width, 400))))
-                    using (new EditorGUI.DisabledScope(PreviewingPatch)) DrawMeshPicker();
-                if (viewsOnFirstRow)
-                {
-                    GUILayout.FlexibleSpace();
-                    DrawViews();
-                    GUILayout.FlexibleSpace();
-                    DrawFitControls();
-                }
-                else
-                {
-                    if (fitOnFirstRow) DrawFitControls();
-                    GUILayout.FlexibleSpace();
-                }
+                using (new EditorGUILayout.HorizontalScope(GUILayout.Width(290)))
+                using (new EditorGUI.DisabledScope(PreviewingPatch)) DrawMeshPicker();
+                if (fitOnFirstRow) DrawFitControls();
+                GUILayout.FlexibleSpace();
+                if (viewsOnFirstRow) DrawViews();
                 GUILayout.Space(96);
             }
+            if (!fitOnFirstRow || !viewsOnFirstRow)
+            {
+                bool shareRow = !fitOnFirstRow && width >= fitWidth + 350;
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    if (!fitOnFirstRow) DrawFitControls();
+                    if (fitOnFirstRow || shareRow) DrawViews();
+                }
+                if (!fitOnFirstRow && !shareRow)
+                    using (new EditorGUILayout.HorizontalScope()) DrawViews();
+            }
 
+            bool historyOnToolRow = width >= 710;
+            using (new EditorGUI.DisabledScope(PreviewingPatch))
+            {
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    DrawEditTools();
+                    GUILayout.FlexibleSpace();
+                    if (historyOnToolRow) DrawHistory();
+                }
+                if (!historyOnToolRow)
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        GUILayout.FlexibleSpace();
+                        DrawHistory();
+                    }
+            }
+
+            if (PreviewingPatch)
+            {
+                DrawPatchControls();
+                return;
+            }
+
+            bool compactBrush = sculpt && width < (tool == Tool.Clipping ? 920 : 820);
             using (new EditorGUILayout.HorizontalScope())
             {
-                using (new EditorGUI.DisabledScope(PreviewingPatch)) DrawEditTools();
-                if (compact)
-                    GUILayout.FlexibleSpace();
-                else
+                if (sculpt)
                 {
-                    ReserveToolbarHelp();
-                    using (new EditorGUI.DisabledScope(PreviewingPatch)) DrawHistory();
+                    if (tool == Tool.Clipping) DrawClippingActions();
+                    DrawBrushSettings();
+                    if (!compactBrush) DrawMirror();
                 }
+                else if (tool == Tool.Vertices)
+                {
+                    if (OverlayButton(new GUIContent("Straighten Span", "Pick two strap ends and preview the straightened section."), straighten))
+                    {
+                        SetVertexMode(!straighten);
+                        GUIUtility.ExitGUI();
+                    }
+                    DrawVertexSize();
+                }
+                else if (tool == Tool.Clipping) DrawClippingActions();
+                if (!compactBrush) ReserveToolbarHelp(ToolHint());
             }
-            if (compact) ReserveToolbarHelp();
-
-            // Narrow windows keep the complete fit and history controls on their own rows.
-            if (!fitOnFirstRow)
-                using (new EditorGUILayout.HorizontalScope()) DrawFitControls();
-            if (!viewsOnFirstRow)
+            if (compactBrush)
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    GUILayout.FlexibleSpace();
-                    DrawViews();
-                    GUILayout.FlexibleSpace();
+                    DrawMirror();
+                    ReserveToolbarHelp(ToolHint());
                 }
-            if (compact)
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    GUILayout.FlexibleSpace();
-                    using (new EditorGUI.DisabledScope(PreviewingPatch)) DrawHistory();
-                }
-            if (crossings.Count > 0)
-                DrawPatchControls();
-            if (PreviewingPatch) return;
-
-            if (straighten || sculpt)
-                using (new EditorGUILayout.HorizontalScope()) DrawToolSettings();
-
-            if (sculpt && SurfaceBrush && !boxMode)
+            if (straighten)
+                using (new EditorGUILayout.HorizontalScope()) DrawSpanSettings();
+            if (sculpt && SurfaceBrush)
                 using (new EditorGUILayout.HorizontalScope()) DrawSurfaceBrushSettings();
-            if (boxMode)
-                OverlayLabel("Drag: replace · Shift: add · Ctrl/Cmd: subtract · Alt: select through · Esc: clear", EditorStyles.wordWrappedMiniLabel);
-            if (sculpt)
-            {
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    GUILayout.Label("Symmetry", EditorStyles.whiteMiniLabel, GUILayout.Width(58));
-                    DrawSymmetryToggle("X", "Mirror across the avatar's centerline (X).", 1);
-                    DrawSymmetryToggle("Y", "Mirror across the garment's vertical midpoint (Y).", 2);
-                    DrawSymmetryToggle("Z", "Mirror across the garment's front/back midpoint (Z).", 4);
-                    if (width >= 630) DrawVertexSize();
-                }
-            }
-            if (straighten || (sculpt && width < 630))
-                using (new EditorGUILayout.HorizontalScope()) DrawVertexSize();
+            if (tool == Tool.Clipping && !clippingBrush && crossings.Count > 0)
+                DrawPatchControls();
+        }
 
-            if (straighten || sculpt)
-            {
-                string hint = !EditableFrame ? "Select an authored frame to edit." :
-                    sculpt ? BrushHint() :
-                    spanPiece == null ? "Click the first attachment point." :
-                    spanOffsets == null ? "Click the second attachment point." :
-                    "Enter applies the span. Esc clears it.";
-                OverlayLabel(hint, EditorStyles.wordWrappedMiniLabel);
-            }
-
+        private string ToolHint()
+        {
+            if (!EditableFrame && (sculpt || straighten)) return "Choose an authored frame to edit.";
+            if (sculpt) return BrushHint();
+            if (straighten) return spanPiece == null ? "Click the first attachment point." :
+                spanOffsets == null ? "Click the second attachment point." : "Enter applies the span. Esc clears it.";
+            if (boxMode) return "Drag to select. Shift adds, Ctrl/Cmd subtracts, Alt selects through.";
+            if (tool == Tool.Clipping) return "Scan the selected mesh against the body and visible garments.";
+            return "Compare the fit or choose an editing tool.";
         }
 
         private void DrawFitControls()
@@ -520,22 +534,28 @@ namespace MilltinaBreastGenerator
                 brushStrength = EditorGUILayout.Slider(brushStrength, .05f, 1f, GUILayout.Width(95));
                 if (EditorGUI.EndChangeCheck()) UpdatePatchPreview();
                 using (new EditorGUI.DisabledScope(patchMotion == null))
-                    if (OverlayButton(new GUIContent("Apply"))) ApplyPatchPreview();
+                    if (OverlayButton(new GUIContent("Apply", "Keep this correction."))) ApplyPatchPreview();
                 if (OverlayButton(new GUIContent("Cancel", "Discard this preview (Esc)."))) CancelPatchPreview();
+                ReserveToolbarHelp("Review the preview before applying it.");
             }
             if (!string.IsNullOrEmpty(patchFeedback))
                 OverlayLabel(patchFeedback, EditorStyles.wordWrappedMiniLabel);
         }
 
-        private void ReserveToolbarHelp()
+        private void ReserveToolbarHelp(string hint)
         {
-            var rect = GUILayoutUtility.GetRect(0, 31, GUILayout.ExpandWidth(true));
-            if (Event.current.type == EventType.Repaint) toolbarHelpRect = rect;
+            GUILayout.Space(8);
+            var rect = GUILayoutUtility.GetRect(0, 29, GUILayout.ExpandWidth(true));
+            if (Event.current.type != EventType.Repaint) return;
+            toolbarHelpRect = rect;
+            toolHelp = hint;
         }
 
         private void DrawVertexSize()
         {
-            vertexSize = EditorGUILayout.Slider(new GUIContent("Vertex display size"), vertexSize, 2, 10, GUILayout.Width(285));
+            GUILayout.Label("Vertex size", EditorStyles.whiteMiniLabel, GUILayout.Width(64));
+            vertexSize = EditorGUILayout.Slider(vertexSize, 2, 10, GUILayout.Width(106));
+            LastControlHelp("Set the displayed size of vertex markers.");
         }
 
         private bool OverlayButton(GUIContent content, bool active = false, params GUILayoutOption[] options)
@@ -566,7 +586,7 @@ namespace MilltinaBreastGenerator
                     fill = new Color(.15f, .145f, .13f);
                 EditorGUI.DrawRect(button, fill);
             }
-            SetCenterHelp(button, content.tooltip);
+            SetControlHelp(button, content.tooltip);
             bool clicked = GUI.Button(button, new GUIContent(content.text, content.image), floatingButton);
             floatingButton.normal.textColor = oldColor;
             return clicked;
@@ -648,80 +668,119 @@ namespace MilltinaBreastGenerator
 
         private void DrawEditTools()
         {
-            OverlayHeading("Edit");
-            if (OverlayButton(new GUIContent("Box", "B toggles box selection. Drag to select vertices on the active mesh."), boxMode))
-                ToggleBoxMode();
-            if (OverlayButton(SculptHelp, sculpt))
+            DrawToolButton(Tool.Sculpt, "Sculpt", "Grab, deform, smooth or protect areas of the garment.");
+            DrawToolButton(Tool.Vertices, "Vertex Control", "Drag to select part of the mesh (B), or straighten a span.");
+            DrawToolButton(Tool.Clipping, "Clipping", "Scan or brush clipping on the selected mesh.");
+            DrawToolButton(Tool.Restore, "Restore Brush", "Recover the generated fit or original fabric locally.");
+            DrawToolButton(Tool.Relax, "Relax", "Even out vertex spacing while holding the garment boundary.");
+        }
+
+        private void DrawToolButton(Tool next, string label, string hint)
+        {
+            if (OverlayButton(new GUIContent(label, hint), tool == next))
             {
-                CancelBox();
-                boxMode = false;
-                sculpt = !sculpt;
-                straighten = false;
-                ClearSpan();
-                if (sculpt && !EditableFrame)
-                {
-                    weight = 100;
-                    Bake();
-                }
-            }
-            if (OverlayButton(new GUIContent("↔  Straighten Span",
-                "Pick the two ends of a strap. Review the highlighted strip, then apply."), straighten))
-            {
-                CancelBox();
-                boxMode = false;
-                straighten = !straighten;
-                sculpt = false;
-                ClearSpan();
-                if (straighten && !EditableFrame)
-                {
-                    weight = 100;
-                    Bake();
-                }
-            }
-            if (OverlayButton(new GUIContent(clippingWork == null ? "◉  Scan Clipping" : "Cancel Check",
-                "Check the selected mesh against the body and visible garments. Existing body clipping appears in gray.")))
-            {
-                if (clippingWork == null)
-                    CheckClipping();
-                else
-                {
-                    ClearClipping();
-                    status = null;
-                }
+                SelectTool(tool == next ? Tool.Inspect : next);
+                GUIUtility.ExitGUI();
             }
         }
 
-        private void DrawToolSettings()
+        private void SelectTool(Tool next)
         {
-            GUILayout.Space(14);
-            if (straighten)
+            EndStroke();
+            CancelBox();
+            ClearSpan();
+            tool = next;
+            boxMode = next == Tool.Vertices;
+            straighten = false;
+            sculpt = next is Tool.Sculpt or Tool.Restore or Tool.Relax || (next == Tool.Clipping && clippingBrush);
+            brushMode = next switch
             {
-                GUILayout.Label("Span strength", EditorStyles.whiteMiniLabel, GUILayout.Width(80), GUILayout.Height(25));
-                spanStrength = EditorGUILayout.Slider(spanStrength, 0f, 1f, GUILayout.Width(124));
-                LastControlHelp("Set how much the section between your two clicks straightens.");
-                using (new EditorGUI.DisabledScope(!EditableFrame || spanOffsets == null || spanStrength <= 0))
-                    if (OverlayButton(new GUIContent("✓ Apply", "Apply the selected span (Enter).")))
-                        ApplySpan();
-                if (OverlayButton(new GUIContent("Reset", "Clear both anchors (Escape).")))
-                    ClearSpan();
+                Tool.Restore => Brush.Restore,
+                Tool.Relax => Brush.Relax,
+                Tool.Clipping => Brush.ClearSkin,
+                _ => sculptBrush
+            };
+        }
+
+        private void SetVertexMode(bool span)
+        {
+            CancelBox();
+            ClearSpan();
+            straighten = span;
+            boxMode = !span;
+        }
+
+        private void DrawClippingActions()
+        {
+            if (OverlayButton(new GUIContent("Scan & Fix", "Find and preview fixes for clipping patches."), !clippingBrush))
+            {
+                if (clippingBrush) SetClippingMode(false);
             }
-            else if (sculpt)
+            if (OverlayButton(new GUIContent("Clipping Brush", "Manually lift fabric clear of its reference surface."), clippingBrush))
+            {
+                if (!clippingBrush) SetClippingMode(true);
+            }
+            if (clippingBrush) return;
+            if (!OverlayButton(new GUIContent(clippingWork == null ? "Scan Selected Mesh" : "Cancel Scan",
+                "Check the selected mesh against the body and visible garments."))) return;
+            if (clippingWork == null) CheckClipping();
+            else
+            {
+                ClearClipping();
+                status = null;
+            }
+        }
+
+        private void SetClippingMode(bool brush)
+        {
+            clippingBrush = brush;
+            SelectTool(Tool.Clipping);
+            GUIUtility.ExitGUI();
+        }
+
+        private void DrawSpanSettings()
+        {
+            GUILayout.Label("Span strength", EditorStyles.whiteMiniLabel, GUILayout.Width(80), GUILayout.Height(25));
+            spanStrength = EditorGUILayout.Slider(spanStrength, 0f, 1f, GUILayout.Width(124));
+            LastControlHelp("Set how much the section between your two clicks straightens.");
+            using (new EditorGUI.DisabledScope(!EditableFrame || spanOffsets == null || spanStrength <= 0))
+                if (OverlayButton(new GUIContent("Apply", "Apply the selected span (Enter).")))
+                    ApplySpan();
+            if (OverlayButton(new GUIContent("Reset", "Clear both anchors (Escape).")))
+                ClearSpan();
+        }
+
+        private void DrawBrushSettings()
+        {
+            if (tool == Tool.Sculpt)
             {
                 OverlayHeading("Brush");
-                brushMode = (Brush)EditorGUILayout.Popup((int)brushMode, BrushNames, GUILayout.Width(122));
+                int selected = EditorGUILayout.Popup(Array.IndexOf(SculptBrushes, sculptBrush), SculptBrushNames, GUILayout.Width(122));
+                if (SculptBrushes[selected] != sculptBrush)
+                {
+                    brushMode = sculptBrush = SculptBrushes[selected];
+                    GUIUtility.ExitGUI();
+                }
                 LastControlHelp(BrushHint());
                 if (brushMode == Brush.Multiply)
                 {
+                    GUILayout.Label("Multiplier", EditorStyles.whiteMiniLabel, GUILayout.Width(54));
                     transferMultiplier = EditorGUILayout.Slider(transferMultiplier, .5f, 1.5f, GUILayout.Width(76));
                     LastControlHelp("Scale the existing movement in the brushed area. 1 leaves it as it is.");
                 }
-                GUILayout.Label("Radius (mm)", EditorStyles.whiteMiniLabel, GUILayout.Width(67));
-                brushRadius = EditorGUILayout.Slider(brushRadius * 1000, size * 15, size * 500, GUILayout.Width(102)) / 1000;
-                LastControlHelp("Set the size of the brush. Scroll while dragging to resize it.");
-
             }
+            GUILayout.Label("Brush radius (mm)", EditorStyles.whiteMiniLabel, GUILayout.Width(96));
+            brushRadius = EditorGUILayout.Slider(brushRadius * 1000, size * 15, size * 500, GUILayout.Width(102)) / 1000;
+            LastControlHelp("Set the size of the brush. Scroll while dragging to resize it.");
+        }
 
-
+        private void DrawMirror()
+        {
+            GUILayout.Space(8);
+            GUILayout.Label("Mirror", EditorStyles.whiteMiniLabel, GUILayout.Width(39));
+            DrawSymmetryToggle("X", "Mirror across the avatar’s centerline (X).", 1);
+            DrawSymmetryToggle("Y", "Mirror across the garment’s vertical midpoint (Y).", 2);
+            DrawSymmetryToggle("Z", "Mirror across the garment’s front/back midpoint (Z).", 4);
         }
 
         private void DrawSurfaceBrushSettings()
@@ -777,8 +836,11 @@ namespace MilltinaBreastGenerator
 
         private void DrawMeshPicker()
         {
-            OverlayHeading("Mesh");
+            GUILayout.Label("Outfit mesh", EditorStyles.whiteMiniLabel, GUILayout.Width(66));
+            var previousColor = GUI.backgroundColor;
+            GUI.backgroundColor = new Color(1f, .83f, .57f);
             int selection = EditorGUILayout.Popup(selectedMesh, editableNames, GUILayout.ExpandWidth(true), GUILayout.MinWidth(130));
+            GUI.backgroundColor = previousColor;
             LastControlHelp("Choose the clothing piece you want to edit. Other pieces stay visible for comparison.");
             if (selection != selectedMesh) SelectMesh(selection);
             if (OverlayButton(new GUIContent("Isolate", "Show only the selected garment and the body. Other pieces stop blocking picks."),
@@ -1205,7 +1267,7 @@ namespace MilltinaBreastGenerator
             if (input.type != EventType.KeyDown || EditorGUIUtility.editingTextField || input.control || input.command || input.alt)
                 return;
             if (input.keyCode == KeyCode.B)
-                ToggleBoxMode();
+                SelectTool(boxMode ? Tool.Inspect : Tool.Vertices);
             else if (input.keyCode == KeyCode.Escape && (boxMode || boxDragging || pieces[selectedMesh + 1].Selection != null))
             {
                 if (!boxDragging) ClearSelection(pieces[selectedMesh + 1]);
@@ -1214,13 +1276,6 @@ namespace MilltinaBreastGenerator
             else return;
             input.Use();
             Repaint();
-        }
-
-        private void ToggleBoxMode()
-        {
-            EndStroke();
-            CancelBox();
-            boxMode = !boxMode;
         }
 
         private void CancelBox()
@@ -2208,7 +2263,7 @@ namespace MilltinaBreastGenerator
             {
                 var piece = pieces.Find(candidate => candidate.Source == renderer);
                 if (!renderer || renderer.sharedMesh != piece.Original)
-                    throw new InvalidOperationException("The source mesh changed. Reopen Preview before saving.");
+                    throw new InvalidOperationException("The source mesh changed. Reopen the Fit Editor before saving.");
                 return GeneratorAssets.Generate(renderer, body, GeneratorAssets.AvatarRoot(body), fit: previewFit, shape: targetShape);
             });
             var messages = new List<string>();
