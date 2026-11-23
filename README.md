@@ -50,4 +50,3 @@ ShapeForge targets garments authored for the same avatar. Existing intersections
 Use the development branch and follow [AGENTS.md](AGENTS.md). Run the [Unity smoke test](docs/INSTALLATION.md#clean-project-check) and see [CHANGELOG.md](CHANGELOG.md) for changes. For bug reports, include Unity and SDK versions, blendshape weights, transfer method, and a shareable reproduction.
 
 [MIT license](LICENSE)
-
