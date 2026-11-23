@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -6,6 +7,36 @@ namespace MilltinaBreastGenerator
 {
     // Snapshot every selected piece before Generate assigns any meshes to renderers.
     internal sealed class LayerFit
+    {
+        private readonly List<(float Weight, LayerFrame Frame)> frames = new();
+        private readonly string shape;
+
+        internal LayerFit(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape = ShapeTransfer.Shape, TransferMethod method = TransferMethod.Barycentric, Vector3[] reference = null)
+        {
+            this.shape = shape;
+            var weights = ShapeTransfer.FrameWeights(body.sharedMesh, shape);
+            foreach (float weight in weights)
+                frames.Add((weight, new LayerFrame(body, renderers, shape, method, weight, weights.Count > 1, reference)));
+        }
+
+        internal string Key(SkinnedMeshRenderer renderer) =>
+            string.Join("|", frames.Select(frame => Hash128.Compute(frame.Frame.Motion(renderer, out _)).ToString()));
+
+        internal Mesh Build(SkinnedMeshRenderer renderer, out string diagnostic, Vector3[] endpoint = null)
+        {
+            var output = new List<(float, Vector3[])>();
+            diagnostic = "";
+            foreach (var (weight, frame) in frames)
+            {
+                var motion = frame.Motion(renderer, out string message);
+                if (weight == 100) diagnostic = message;
+                output.Add((weight, weight == 100 && endpoint != null ? endpoint : motion));
+            }
+            return ShapeTransfer.BuildMesh(renderer.sharedMesh, renderer.sharedMesh.vertices, output, shape);
+        }
+    }
+
+    internal sealed class LayerFrame
     {
         private sealed class Piece
         {
@@ -69,10 +100,10 @@ namespace MilltinaBreastGenerator
 
         private readonly string shape;
 
-        internal LayerFit(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape = ShapeTransfer.Shape, TransferMethod method = TransferMethod.Barycentric)
+        internal LayerFrame(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape, TransferMethod method, float weight, bool allowStationary, Vector3[] reference)
         {
             this.shape = shape;
-            var source = new ShapeTransfer.FitSource(body.sharedMesh, shape, method);
+            var source = new ShapeTransfer.FitSource(body.sharedMesh, shape, method, weight, reference);
             radius = source.Peak * .20f;
             var worldToBody = body.transform.worldToLocalMatrix;
             foreach (var renderer in renderers)
@@ -83,7 +114,7 @@ namespace MilltinaBreastGenerator
                 try
                 {
                     p.Local = p.Source.vertices;
-                    p.Result = ShapeTransfer.Fit(source, p.Source, p.Local, p.ToBody, out p.Message);
+                    p.Result = ShapeTransfer.Fit(source, p.Source, p.Local, p.ToBody, out p.Message, allowStationary);
                     p.Rest = Array.ConvertAll(p.Local, p.ToBody.MultiplyPoint3x4);
                     p.Motion = Array.ConvertAll(p.Result, p.ToBody.MultiplyVector);
                     for (int section = 0; section < p.Source.subMeshCount; section++)
@@ -117,10 +148,10 @@ namespace MilltinaBreastGenerator
                 piece.Fitted = new ShapeTransfer.TriangleSurface[2];
                 for (int frame = 0; frame < piece.Fitted.Length; frame++)
                 {
-                    float weight = (frame + 1) * .5f;
+                    float fraction = (frame + 1) * .5f;
                     var points = new Vector3[piece.Rest.Length];
                     for (int i = 0; i < points.Length; i++)
-                        points[i] = piece.Rest[i] + piece.Motion[i] * weight;
+                        points[i] = piece.Rest[i] + piece.Motion[i] * fraction;
                     piece.Fitted[frame] = new ShapeTransfer.TriangleSurface(piece.Surface, points);
                 }
             }
@@ -185,19 +216,12 @@ namespace MilltinaBreastGenerator
             }
         }
 
-        internal string Key(SkinnedMeshRenderer renderer)
-        {
-            var p = pieces[renderer];
-            if (p.Error != null) throw new InvalidOperationException(p.Error.Message, p.Error);
-            return Hash128.Compute(p.Result).ToString();
-        }
-
-        internal Mesh Build(SkinnedMeshRenderer renderer, out string diagnostic)
+        internal Vector3[] Motion(SkinnedMeshRenderer renderer, out string diagnostic)
         {
             var p = pieces[renderer];
             if (p.Error != null) throw new InvalidOperationException(p.Error.Message, p.Error);
             diagnostic = p.Message;
-            return ShapeTransfer.BuildMesh(p.Source, p.Local, p.Result, shape);
+            return p.Result;
         }
     }
 }

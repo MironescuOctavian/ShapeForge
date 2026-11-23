@@ -121,6 +121,8 @@ namespace MilltinaBreastGenerator
             window.Show();
         }
 
+        private LayerFit previewFit;
+
         private void Build(SkinnedMeshRenderer body, SkinnedMeshRenderer[] outfits, string shape, TransferMethod method)
         {
             Release();
@@ -147,10 +149,10 @@ namespace MilltinaBreastGenerator
                 size = Mathf.Max(region.size.magnitude * 0.6f, 0.02f);
 
                 AddPiece(body, body.sharedMesh);
-                var fit = new LayerFit(body, outfits, targetShape, method);
+                previewFit = new LayerFit(body, outfits, targetShape, method);
                 foreach (var outfit in outfits)
                 {
-                    var mesh = fit.Build(outfit, out _);
+                    var mesh = previewFit.Build(outfit, out _);
                     generated.Add(mesh);
                     AddPiece(outfit, mesh);
                 }
@@ -645,7 +647,7 @@ namespace MilltinaBreastGenerator
             {
                 var mesh = piece.Renderer.sharedMesh;
                 current = new Vector3[mesh.vertexCount];
-                mesh.GetBlendShapeFrameVertices(mesh.GetBlendShapeIndex(targetShape), 0, current, null, null);
+                mesh.GetBlendShapeFrameVertices(mesh.GetBlendShapeIndex(targetShape), ShapeTransfer.FrameWeights(mesh, targetShape).IndexOf(100f), current, null, null);
             }
             ApplyDraft(piece, prior);
             from.Pop();
@@ -1118,7 +1120,7 @@ namespace MilltinaBreastGenerator
             var piece = spanPiece;
             var mesh = piece.Renderer.sharedMesh;
             var previous = new Vector3[mesh.vertexCount];
-            mesh.GetBlendShapeFrameVertices(mesh.GetBlendShapeIndex(targetShape), 0, previous, null, null);
+            mesh.GetBlendShapeFrameVertices(mesh.GetBlendShapeIndex(targetShape), ShapeTransfer.FrameWeights(mesh, targetShape).IndexOf(100f), previous, null, null);
             var motion = (Vector3[])previous.Clone();
             var inverse = piece.Renderer.worldToLocalMatrix;
             for (int i = 0; i < motion.Length; i++)
@@ -1144,7 +1146,7 @@ namespace MilltinaBreastGenerator
 
             var mesh = piece.Renderer.sharedMesh;
             strokeStart = new Vector3[mesh.vertexCount];
-            mesh.GetBlendShapeFrameVertices(mesh.GetBlendShapeIndex(targetShape), 0, strokeStart, null, null);
+            mesh.GetBlendShapeFrameVertices(mesh.GetBlendShapeIndex(targetShape), ShapeTransfer.FrameWeights(mesh, targetShape).IndexOf(100f), strokeStart, null, null);
             strokePiece = piece;
             strokeThroughBody = throughBody;
             strokeNormals = piece.WorldNormals;
@@ -1559,7 +1561,7 @@ namespace MilltinaBreastGenerator
         {
             var previous = piece.Renderer.sharedMesh;
             piece.OriginalPositions ??= piece.Original.vertices;
-            var mesh = ShapeTransfer.BuildMesh(piece.Original, piece.OriginalPositions, deltas, targetShape);
+            var mesh = previewFit.Build(piece.Source, out _, deltas);
             generated.Remove(previous);
             generated.Add(mesh);
             var weights = new float[piece.Original.blendShapeCount];
@@ -1603,9 +1605,9 @@ namespace MilltinaBreastGenerator
                 {
                     var mesh = piece.Renderer.sharedMesh;
                     deltas = new Vector3[mesh.vertexCount];
-                    mesh.GetBlendShapeFrameVertices(mesh.GetBlendShapeIndex(targetShape), 0, deltas, null, null);
+                    mesh.GetBlendShapeFrameVertices(mesh.GetBlendShapeIndex(targetShape), ShapeTransfer.FrameWeights(mesh, targetShape).IndexOf(100f), deltas, null, null);
                 }
-                return GeneratorAssets.Generate(renderer, body, GeneratorAssets.AvatarRoot(body), draft: deltas, shape: targetShape);
+                return GeneratorAssets.Generate(renderer, body, GeneratorAssets.AvatarRoot(body), fit: previewFit, draft: deltas, shape: targetShape);
             });
             var messages = new List<string>();
             foreach (var result in results)
@@ -1778,6 +1780,7 @@ namespace MilltinaBreastGenerator
 
         private void Release()
         {
+            previewFit = null;
             StopFlying();
             EndStroke();
             ClearSpan();

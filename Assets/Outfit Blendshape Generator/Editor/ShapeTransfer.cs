@@ -31,7 +31,6 @@ namespace MilltinaBreastGenerator
                 mesh.GetBlendShapeIndex("Shrink_Clothes_on") >= 0;
             var points = new Vector3[vertices.Length];
             var moves = new bool[vertices.Length];
-            var lower = new Vector3[vertices.Length];
             var upper = new Vector3[vertices.Length];
 
             for (int index = 0; index < mesh.blendShapeCount; index++)
@@ -40,18 +39,21 @@ namespace MilltinaBreastGenerator
                 if (string.IsNullOrWhiteSpace(name) || name.TrimStart().StartsWith("---", StringComparison.Ordinal))
                     continue;
 
-                Vector3[] deltas;
-                try { deltas = ReadSourceDeltas(mesh, index, lower, upper); }
-                catch (InvalidOperationException) { continue; }
-                bool any = false;
-                bool finite = true;
-                for (int i = 0; i < deltas.Length; i++)
+                bool any = false, finite = true, collapsed = false;
+                for (int frame = 0; frame < mesh.GetBlendShapeFrameCount(index); frame++)
                 {
-                    float squared = deltas[i].sqrMagnitude;
-                    finite &= float.IsFinite(squared);
-                    moves[i] = squared > 1e-12f;
-                    any |= moves[i];
-                    points[i] = vertices[i] + deltas[i];
+                    float weight = mesh.GetBlendShapeFrameWeight(index, frame);
+                    if (!float.IsFinite(weight) || weight <= 0) { finite = false; break; }
+                    mesh.GetBlendShapeFrameVertices(index, frame, upper, null, null);
+                    for (int i = 0; i < upper.Length; i++)
+                    {
+                        float squared = upper[i].sqrMagnitude;
+                        finite &= float.IsFinite(squared);
+                        moves[i] = squared > 1e-12f;
+                        any |= moves[i];
+                        points[i] = vertices[i] + upper[i];
+                    }
+                    collapsed |= HasCollapsedFaces(points, moves, triangles);
                 }
                 if (!any || !finite)
                     continue;
@@ -62,7 +64,7 @@ namespace MilltinaBreastGenerator
                     normalized.Contains("body_hide") || normalized.Contains("body_mask") ||
                     normalized.Contains("shrink_clothes") ||
                     (milltinaMasks && normalized.StartsWith("shrink_", StringComparison.Ordinal));
-                options.Add((name, namedMask || HasCollapsedFaces(points, moves, triangles)));
+                options.Add((name, namedMask || collapsed));
             }
             return options;
         }
@@ -93,11 +95,11 @@ namespace MilltinaBreastGenerator
             private TriangleSurface fittedSurface;
             internal readonly TransferField Field;
 
-            internal FitSource(Mesh mesh, string shape, TransferMethod method = TransferMethod.Barycentric)
+            internal FitSource(Mesh mesh, string shape, TransferMethod method = TransferMethod.Barycentric, float weight = 100, Vector3[] reference = null)
             {
                 ShapeName = shape;
-                Positions = mesh.vertices;
-                Deltas = ReadSourceDeltas(mesh, shape);
+                Positions = reference ?? mesh.vertices;
+                Deltas = ReadSourceDeltas(mesh, shape, weight);
                 foreach (var delta in Deltas)
                 {
                     if (!float.IsFinite(delta.sqrMagnitude))
@@ -105,7 +107,7 @@ namespace MilltinaBreastGenerator
                     Peak = Mathf.Max(Peak, delta.magnitude);
                 }
                 if (Peak <= 1e-6f)
-                    throw new InvalidOperationException("The source shape has no measurable deformation.");
+                    return;
 
                 Radius = Peak * 1.5f;
                 var queryRegion = MovingRegion(mesh, Positions, Deltas);
@@ -138,11 +140,17 @@ namespace MilltinaBreastGenerator
         internal static Mesh Generate(Mesh body, Mesh outfit, Matrix4x4 outfitToBody, out string warning, string shape = Shape)
         {
             var vertices = outfit.vertices;
-            return BuildMesh(outfit, vertices, Fit(new FitSource(body, shape), outfit, vertices, outfitToBody, out warning), shape);
+            var weights = FrameWeights(body, shape);
+            var frames = new List<(float, Vector3[])>();
+            warning = "";
+            foreach (float weight in weights)
+                frames.Add((weight, Fit(new FitSource(body, shape, weight: weight), outfit, vertices, outfitToBody, out warning, weights.Count > 1)));
+            return BuildMesh(outfit, vertices, frames, shape);
         }
 
-        internal static Vector3[] Fit(FitSource body, Mesh outfit, Vector3[] vertices, Matrix4x4 outfitToBody, out string warning)
+        internal static Vector3[] Fit(FitSource body, Mesh outfit, Vector3[] vertices, Matrix4x4 outfitToBody, out string warning, bool allowStationary = false)
         {
+            if (body.Peak <= 1e-6f) { warning = "Stationary frame."; return new Vector3[vertices.Length]; }
             float determinant = outfitToBody.determinant;
             if (!float.IsFinite(determinant) || Mathf.Abs(determinant) < 1e-12f)
                 throw new InvalidOperationException("The outfit transform is singular.");
@@ -217,7 +225,7 @@ namespace MilltinaBreastGenerator
                 changed++;
             }
 
-            if (changed == 0)
+            if (changed == 0 && !allowStationary)
                 throw new InvalidOperationException("No outfit vertices matched the deforming body surface. Check the outfit fit, rest pose, and scale.");
 
             var islands = FindIslands(outfit, vertices, out var closed);
@@ -235,17 +243,39 @@ namespace MilltinaBreastGenerator
             return deltas;
         }
 
-        internal static Mesh BuildMesh(Mesh outfit, Vector3[] vertices, Vector3[] deltas, string shape = Shape)
+        internal static List<float> FrameWeights(Mesh mesh, string shape)
         {
-            CalculateShading(outfit, vertices, deltas, out var normalDeltas, out var tangentDeltas);
+            int index = mesh.GetBlendShapeIndex(shape);
+            if (index < 0) throw new InvalidOperationException($"Missing source shape {shape}.");
+            var weights = new List<float>();
+            for (int frame = 0; frame < mesh.GetBlendShapeFrameCount(index); frame++)
+            {
+                float weight = mesh.GetBlendShapeFrameWeight(index, frame);
+                if (!float.IsFinite(weight) || weight <= (frame == 0 ? 0 : weights[frame - 1]))
+                    throw new InvalidOperationException("Expected ascending positive frame weights.");
+                weights.Add(weight);
+            }
+            if (!weights.Contains(100f)) { weights.Add(100f); weights.Sort(); }
+            return weights;
+        }
+
+        internal static Mesh BuildMesh(Mesh outfit, Vector3[] vertices, Vector3[] deltas, string shape = Shape)
+            => BuildMesh(outfit, vertices, new[] { (100f, deltas) }, shape);
+
+        internal static Mesh BuildMesh(Mesh outfit, Vector3[] vertices, IEnumerable<(float Weight, Vector3[] Motion)> frames, string shape)
+        {
             var copy = UnityEngine.Object.Instantiate(outfit);
             try
             {
                 copy.name = outfit.name + " - " + shape;
-                copy.AddBlendShapeFrame(shape, 100, deltas, normalDeltas, tangentDeltas);
                 var bounds = copy.bounds;
-                for (int i = 0; i < vertices.Length; i++)
-                    bounds.Encapsulate(vertices[i] + deltas[i]);
+                foreach (var (weight, deltas) in frames)
+                {
+                    CalculateShading(outfit, vertices, deltas, out var normalDeltas, out var tangentDeltas);
+                    copy.AddBlendShapeFrame(shape, weight, deltas, normalDeltas, tangentDeltas);
+                    for (int i = 0; i < vertices.Length; i++)
+                        bounds.Encapsulate(vertices[i] + deltas[i]);
+                }
                 copy.bounds = bounds;
             }
             catch
@@ -395,9 +425,12 @@ namespace MilltinaBreastGenerator
         internal static Bounds ShapeBounds(SkinnedMeshRenderer body, string shape)
         {
             var positions = body.sharedMesh.vertices;
-            var deltas = ReadSourceDeltas(body.sharedMesh, shape);
+            var weights = FrameWeights(body.sharedMesh, shape);
             var bounds = new Bounds(body.bounds.center, Vector3.zero);
             bool first = true;
+            foreach (float weight in weights)
+            {
+            var deltas = ReadSourceDeltas(body.sharedMesh, shape, weight);
             for (int i = 0; i < positions.Length; i++)
             {
                 if (deltas[i].sqrMagnitude <= 1e-8f)
@@ -410,18 +443,23 @@ namespace MilltinaBreastGenerator
                 }
                 bounds.Encapsulate(point);
             }
+            }
             return bounds;
         }
 
         internal static Func<SkinnedMeshRenderer, bool> ShapeOverlap(SkinnedMeshRenderer body, string shape, TransferMethod method = TransferMethod.Barycentric)
         {
-            var source = new FitSource(body.sharedMesh, shape, method);
-            var deltas = source.Deltas;
+            var sources = FrameWeights(body.sharedMesh, shape).ConvertAll(weight => new FitSource(body.sharedMesh, shape, method, weight));
             var worldToBody = body.transform.worldToLocalMatrix;
             return outfit =>
             {
                 var matrix = worldToBody * outfit.transform.localToWorldMatrix;
-                foreach (var vertex in outfit.sharedMesh.vertices)
+                var vertices = outfit.sharedMesh.vertices;
+                foreach (var source in sources)
+                {
+                if (source.Peak <= 1e-6f) continue;
+                var deltas = source.Deltas;
+                foreach (var vertex in vertices)
                 {
                     var point = matrix.MultiplyPoint3x4(vertex);
                     if (!source.QueryRegion.Contains(point) || !source.OriginalSurface.FindClosest(point, source.Radius,
@@ -435,20 +473,21 @@ namespace MilltinaBreastGenerator
                     if (displacement.magnitude >= source.Peak * 0.001f)
                         return true;
                 }
+                }
                 return false;
             };
         }
 
-        internal static Vector3[] ReadSourceDeltas(Mesh body, string shapeName = Shape)
+        internal static Vector3[] ReadSourceDeltas(Mesh body, string shapeName = Shape, float weight = 100)
         {
             int shape = body.GetBlendShapeIndex(shapeName);
             if (shape < 0)
                 throw new InvalidOperationException($"The body mesh is missing {shapeName}.");
 
-            return ReadSourceDeltas(body, shape, new Vector3[body.vertexCount], new Vector3[body.vertexCount]);
+            return ReadSourceDeltas(body, shape, new Vector3[body.vertexCount], new Vector3[body.vertexCount], weight);
         }
 
-        private static Vector3[] ReadSourceDeltas(Mesh body, int shape, Vector3[] lower, Vector3[] upper)
+        private static Vector3[] ReadSourceDeltas(Mesh body, int shape, Vector3[] lower, Vector3[] upper, float weight = 100)
         {
             int frames = body.GetBlendShapeFrameCount(shape);
             float lowerWeight = 0;
@@ -459,9 +498,9 @@ namespace MilltinaBreastGenerator
                     throw new InvalidOperationException("The source shape must have ascending positive frame weights.");
 
                 body.GetBlendShapeFrameVertices(shape, frame, upper, null, null);
-                if (upperWeight >= 100 || frame == frames - 1)
+                if (upperWeight >= weight || frame == frames - 1)
                 {
-                    float t = (100 - lowerWeight) / (upperWeight - lowerWeight);
+                    float t = (weight - lowerWeight) / (upperWeight - lowerWeight);
                     if (frame == 0)
                     {
                         if (t != 1f)

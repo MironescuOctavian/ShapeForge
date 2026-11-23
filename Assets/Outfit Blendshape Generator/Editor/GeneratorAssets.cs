@@ -114,7 +114,7 @@ namespace MilltinaBreastGenerator
                 throw new InvalidOperationException("Install the tool in a folder under Assets before generating meshes.");
             string toolFolder = scriptPath.Substring(0, scriptPath.LastIndexOf("/Editor/", StringComparison.Ordinal));
             string outputFolder = toolFolder + "/Generated";
-            string path = OutputPath(outputFolder, original, bodyMesh, matrix, sync, bodyPath, shape, draft != null ? Hash128.Compute(draft).ToString() : fit?.Key(outfit));
+            string path = OutputPath(outputFolder, original, bodyMesh, matrix, sync, bodyPath, shape, (fit?.Key(outfit) ?? "") + (draft != null ? Hash128.Compute(draft).ToString() : ""));
             var generated = AssetDatabase.LoadAssetAtPath<Mesh>(path);
             var info = GetInfo(generated);
             bool create = !generated || !info || info.original != baseMesh ||
@@ -132,7 +132,7 @@ namespace MilltinaBreastGenerator
                     string diagnostic;
                     if (draft != null)
                     {
-                        generated = ShapeTransfer.BuildMesh(original, original.vertices, draft, shape);
+                        generated = fit != null ? fit.Build(outfit, out _, draft) : ShapeTransfer.BuildMesh(original, original.vertices, draft, shape);
                         diagnostic = "Saved preview corrections.";
                     }
                     else
@@ -227,10 +227,13 @@ namespace MilltinaBreastGenerator
                 foreach (var entry in remaining)
                 {
                     int index = current.GetBlendShapeIndex(entry.name);
-                    current.GetBlendShapeFrameVertices(index, 0, deltas, normals, tangents);
-                    mesh.AddBlendShapeFrame(entry.name, current.GetBlendShapeFrameWeight(index, 0), deltas, normals, tangents);
-                    for (int i = 0; i < vertices.Length; i++)
-                        bounds.Encapsulate(vertices[i] + deltas[i]);
+                    for (int frame = 0; frame < current.GetBlendShapeFrameCount(index); frame++)
+                    {
+                        current.GetBlendShapeFrameVertices(index, frame, deltas, normals, tangents);
+                        mesh.AddBlendShapeFrame(entry.name, current.GetBlendShapeFrameWeight(index, frame), deltas, normals, tangents);
+                        for (int i = 0; i < vertices.Length; i++)
+                            bounds.Encapsulate(vertices[i] + deltas[i]);
+                    }
                 }
                 mesh.bounds = bounds;
                 AssetDatabase.CreateAsset(mesh, path);
@@ -326,7 +329,7 @@ namespace MilltinaBreastGenerator
 
         private static string OutputPath(string outputFolder, Mesh outfit, Mesh body, Matrix4x4 matrix, SyncChange change, string bodyPath, string shape, string layerKey)
         {
-            var key = new StringBuilder("v12-source-shapes").Append('|').Append(shape).Append('|').Append(layerKey);
+            var key = new StringBuilder("v13-source-frames").Append('|').Append(shape).Append('|').Append(layerKey);
             foreach (var mesh in new[] { outfit, body })
             {
                 AssetDatabase.TryGetGUIDAndLocalFileIdentifier(mesh, out string guid, out long fileId);
