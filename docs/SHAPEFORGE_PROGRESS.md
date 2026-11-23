@@ -43,3 +43,7 @@ Commit 09001f5 applies the ShapeForge menu and branding, a collapsed Advanced se
 The final ShapeForge.unitypackage at D:/Unity Personal/ShapeForge.unitypackage contains eight Editor scripts and the bundled README with the original Unity asset metadata. Its SHA-256 is 83906DB9BF1CAD0BBD9D8C1821DEEFDEC022FD7907A4C4446B2A8B8F432BAA17. Package export and clean import exited zero. The imported package passed AccuracyChecks.Run, including all three transfer methods, baked intermediate weights, alternate reference and reverse transfer, seam separation, shading and selective restore.
 
 The approved icon was unavailable. The README banner uses the requested charcoal and gold palette without an icon. Purchased outfit images are pending documented publication rights. No release or tag is part of this phase.
+
+## Phase 4 verification
+
+See [release readiness](SHAPEFORGE_RELEASE_READINESS.md) for independently rerun evidence, regression fixes, the rebuilt package checksum and public release gates.
