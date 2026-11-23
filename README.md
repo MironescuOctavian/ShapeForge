@@ -1,70 +1,52 @@
 # ShapeForge
 
-**Precision Blendshape Transfer & Generation for Unity**
+![ShapeForge — Precision Blendshape Generator](docs/images/banner.png)
 
-ShapeForge is a Unity Editor tool designed to generate accurate outfit blendshapes from existing avatar body blendshapes, without requiring Blender.
-
-Built with VRChat avatar creators in mind, ShapeForge focuses on precise mesh deformation, garment preservation, and an intuitive editing experience.
-
-
-## Features
-
-- **Blendshape Transfer** — Generate missing clothing blendshapes from existing avatar body shapes.
-- **Multiple Transfer Algorithms** — Barycentric, weighted, and RBF methods.
-- **Garment-Aware Deformation** — Preserve clothing structure while adapting to the source deformation.
-- **Interactive Preview** — Inspect generated shapes directly inside Unity.
-- **Correction Tools** — Refine problem areas without switching to Blender.
-- **Non-Destructive Generation** — Keep original mesh assets intact.
-- **Modular Avatar Integration** — Synchronize generated shapes with avatar blendshapes where supported.
+ShapeForge transfers body blendshapes to clothing already made for the same avatar. Preview the fit in Unity, correct problem areas, then save a generated mesh for each selected garment.
 
 ## Compatibility
 
-- Unity 6 — primary development target
-- VRChat SDK3 Avatars
-- Modular Avatar integration
+- **Unity 6.** Development and package validation target **6000.0.67f1**.
+- **VRChat avatars.** Phase 2 was tested with VRChat Avatars SDK **3.11.0-beta.1** and Modular Avatar **1.19.0**. Modular Avatar is optional. Without it, set the generated garment shape manually.
+- **Unity Editor only.** The package contains ShapeForge editor scripts and documentation.
 
-Specific tested versions will be listed with each release.
+## What it does
 
-## Installation
+- Transfers shapes using Barycentric, Weighted or RBF interpolation. Barycentric is the default.
+- Preserves authored positive blendshape frames and supports alternate authored body states, including reverse transfer.
+- Fits selected pieces together and checks for suspect cloth and body intersections.
+- Provides a separate avatar preview with fit scrubbing, fixed views, isolation, sculpting, smoothing, Straighten Span, and correction history.
+- Saves a separate mesh asset, preserving original mesh data, skinning, and existing shapes. Restore removes generated shapes.
 
-1. Download the latest `ShapeForge.unitypackage` from GitHub Releases.
-2. Open your Unity avatar project.
-3. Select **Assets → Import Package → Custom Package**.
-4. Import ShapeForge.
-5. Open **Tools → ShapeForge → Blendshape Generator**.
+## Install
 
-## How to Use
+Download **ShapeForge.unitypackage** from [GitHub Releases](https://github.com/MironescuOctavian/ShapeForge/releases) once a release is available. For a development build, follow the [installation and package guide](docs/INSTALLATION.md).
 
-1. Select the avatar's source body mesh.
-2. Choose the blendshape you want to transfer.
-3. Select the outfit mesh or supported outfit pieces.
-4. Preview the generated deformation.
-5. Generate and save your new outfit blendshape.
+In Unity, choose **Assets → Import Package → Custom Package**, select the package, and import it. Open **Tools → ShapeForge → Blendshape Generator**.
 
-Use the included correction tools if an outfit needs additional adjustment.
+## Transfer a shape
 
-## Scope
+1. Select the **Body Mesh**, **Outfit**, and **Source Shape**. You can drag a clothing object or the parent of several pieces from the Hierarchy.
+2. Check the eligible pieces you want to fit. Open **Advanced** to choose a transfer method or an authored body state.
+3. Open **Preview** and compare **0**, **50**, and **100**. Isolate pieces or run **Check Clipping** when needed.
+4. Use **Generate** for the automatic fit or **Save Corrections** after editing the preview. Use **Restore** to remove generated shapes.
 
-ShapeForge specializes in transferring and generating blendshapes for clothing already designed for the target avatar.
+## Unity interface
 
-It is **not an outfit conversion or avatar retargeting tool**.
+The screenshots show the actual Unity windows with a synthetic test outfit.
 
-The objective is to achieve high-quality blendshapes with minimal manual correction, entirely inside Unity.
+<img src="docs/images/main-window.png" alt="ShapeForge generator with garment selection and the gold Generate button" width="330"> <img src="docs/images/fit-preview.png" alt="ShapeForge fit preview with its fit slider, view controls and correction tools" width="390">
 
-## Limitations
+## Outfit demonstrations
 
-Automatic deformation quality depends on outfit topology, clothing structure, and the relationship between the source body and target mesh.
+The [capture checklist](docs/images/README.md) identifies the stills awaiting permission for publication. Each example needs a real Unity capture at 0%, 50%, and 100% using the same camera and lighting.
 
-Difficult garments may require manual corrections. Blendshape generation alone cannot guarantee clipping-free behavior under every animation or physics pose.
+## Known limitations
 
-## Contributing
+ShapeForge targets garments authored for the same avatar. Existing intersections can remain, especially around tight cups, straps, and stacked panels. The clipping check flags suspect contacts in the preview. It cannot certify all animation poses. Negative authored frame weights are currently unsupported. Layered generation and additional source frames take longer.
 
-Bug reports, suggestions, and contributions are welcome through GitHub Issues and Pull Requests.
+## Development
 
-## License
+Use the development branch and follow [AGENTS.md](AGENTS.md). Run the [Unity smoke test](docs/INSTALLATION.md#clean-project-check) and see [CHANGELOG.md](CHANGELOG.md) for changes. For bug reports, include Unity and SDK versions, blendshape weights, transfer method, and a shareable reproduction.
 
-License information will be provided before public release.
-
-## Disclaimer
-
-ShapeForge is an independent community tool and is not affiliated with or endorsed by VRChat or Unity Technologies.
+[MIT license](LICENSE)
