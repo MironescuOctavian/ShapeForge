@@ -12,6 +12,7 @@ namespace MilltinaBreastGenerator
         private readonly string shape;
 
         private readonly Dictionary<(SkinnedMeshRenderer, float), Vector3[]> edits = new();
+        private readonly Dictionary<SkinnedMeshRenderer, bool[]> protection = new();
         internal readonly bool Reverse;
         internal float[] Weights => frames.Select(frame => frame.Weight).ToArray();
 
@@ -23,10 +24,21 @@ namespace MilltinaBreastGenerator
             edits[(renderer, weight)] = motion;
         }
 
+        internal void SetProtection(SkinnedMeshRenderer renderer, bool[] mask)
+        {
+            if (mask == null) protection.Remove(renderer);
+            else protection[renderer] = mask;
+        }
+
         private Vector3[] EditedMotion(SkinnedMeshRenderer renderer, float weight, LayerFrame frame, out string message)
         {
             var original = frame.Motion(renderer, out message);
-            return edits.TryGetValue((renderer, weight), out var edit) ? edit : original;
+            var motion = edits.TryGetValue((renderer, weight), out var edit) ? edit : original;
+            if (!protection.TryGetValue(renderer, out var mask)) return motion;
+            var protectedMotion = (Vector3[])motion.Clone();
+            for (int i = 0; i < mask.Length; i++)
+                if (mask[i]) protectedMotion[i] = Vector3.zero;
+            return protectedMotion;
         }
 
         internal LayerFit(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape = ShapeTransfer.Shape, TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral)
@@ -35,8 +47,20 @@ namespace MilltinaBreastGenerator
             Reverse = mode == BodyReference.OtherActiveShapesAndTargetAt100;
             var reference = ShapeTransfer.ReferencePositions(body, shape, mode);
             var weights = ShapeTransfer.FrameWeights(body.sharedMesh, shape, Reverse);
+            LayerFrame prior = null;
             foreach (float weight in weights)
-                frames.Add((weight, new LayerFrame(body, renderers, shape, method, weight, weights.Count > 1, reference, Reverse)));
+            {
+                var frame = new LayerFrame(body, renderers, shape, method, weight, weights.Count > 1, reference, Reverse, prior);
+                frames.Add((weight, frame));
+                prior = frame;
+            }
+        }
+
+        internal Vector3[] GeneratedMotion(SkinnedMeshRenderer renderer, float weight)
+        {
+            foreach (var frame in frames)
+                if (frame.Weight == weight) return frame.Frame.Motion(renderer, out _);
+            throw new InvalidOperationException("Select a generated frame.");
         }
 
         internal string Key(SkinnedMeshRenderer renderer) =>
@@ -65,7 +89,7 @@ namespace MilltinaBreastGenerator
             internal readonly HashSet<(int A, int B)> Edges = new();
             internal Matrix4x4 ToBody;
             internal float Winding = 1f;
-            internal Vector3[] Local, Rest, Motion, Result;
+            internal Vector3[] Local, Rest, Motion, Result, Previous, Clearance;
             internal int[] Weld;
             internal ShapeTransfer.TriangleSurface Surface;
             internal string Message;
@@ -74,7 +98,7 @@ namespace MilltinaBreastGenerator
             internal bool IsBody;
             internal ShapeTransfer.TriangleSurface[] Fitted;
 
-            internal void Constrain(Vector3 point, Vector3 motion, float radius, ref Vector3 push)
+            internal void Constrain(Vector3 point, Vector3 previous, Vector3 motion, float radius, ref Vector3 push)
             {
                 if (Range.SqrDistance(point) >= radius * radius ||
                     !Surface.FindClosest(point, radius, out var face, out var weights, out var offset))
@@ -87,16 +111,20 @@ namespace MilltinaBreastGenerator
                 // Only an originally outside, near-normal projection establishes layer order.
                 if (gap < 0 || (!IsBody && (gap <= radius * .002f || gap < offset.magnitude * .8f)))
                     return;
-                var relative = motion - (Motion[face.A] * weights.x + Motion[face.B] * weights.y + Motion[face.C] * weights.z);
+                // Sample the actual piecewise-linear interval from the prior authored frame.
                 for (int step = 1; step <= 2; step++)
                 {
                     float t = step * .5f;
-                    var fittedNormal = Vector3.Cross(ab + (Motion[face.B] - Motion[face.A]) * t,
-                        ac + (Motion[face.C] - Motion[face.A]) * t).normalized * Winding;
+                    var aMotion = At(face.A, t);
+                    var bMotion = At(face.B, t);
+                    var cMotion = At(face.C, t);
+                    var fittedNormal = Vector3.Cross(ab + bMotion - aMotion, ac + cMotion - aMotion).normalized * Winding;
                     if (Vector3.Dot(fittedNormal, normal) < .65f)
                         continue;
-                    float height = Vector3.Dot(offset + (relative + push) * t, fittedNormal);
-                    var sample = point + (motion + push) * t;
+                    var sampleMotion = Vector3.LerpUnclamped(previous, motion + push, t);
+                    var relative = sampleMotion - (aMotion * weights.x + bMotion * weights.y + cMotion * weights.z);
+                    float height = Vector3.Dot(offset + relative, fittedNormal);
+                    var sample = point + sampleMotion;
                     if (Fitted[step - 1].FindClosest(sample, radius, out var nearest, out _, out var fittedOffset))
                     {
                         var nearestNormal = Fitted[step - 1].Normal(nearest) * Winding;
@@ -114,16 +142,22 @@ namespace MilltinaBreastGenerator
                         push += fittedNormal * Mathf.Min(missing, radius);
                 }
             }
+
+            internal Vector3 At(int i, float t) => Previous == null ? Motion[i] * t : Vector3.LerpUnclamped(Previous[i], Motion[i], t);
         }
 
         private readonly Dictionary<SkinnedMeshRenderer, Piece> pieces = new();
         private readonly List<Piece> ordered = new();
         private readonly float radius;
+        private readonly Vector3[] bodyMotion;
+        private readonly float bodyPeak;
 
-        internal LayerFrame(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape, TransferMethod method, float weight, bool allowStationary, Vector3[] reference, bool reverse)
+        internal LayerFrame(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape, TransferMethod method, float weight, bool allowStationary, Vector3[] reference, bool reverse, LayerFrame prior)
         {
             var source = new ShapeTransfer.FitSource(body.sharedMesh, shape, method, weight, reference, reverse);
-            radius = source.Peak * .20f;
+            bodyMotion = source.Deltas;
+            bodyPeak = source.Peak;
+            radius = Mathf.Max(bodyPeak, prior?.bodyPeak ?? 0) * .20f;
             var worldToBody = body.transform.worldToLocalMatrix;
             foreach (var renderer in renderers)
             {
@@ -135,6 +169,9 @@ namespace MilltinaBreastGenerator
                     p.Local = p.Source.vertices;
                     p.Weld = ShapeTransfer.SeamPartners(p.Source, p.Local);
                     p.Result = ShapeTransfer.Fit(source, p.Source, p.Local, p.ToBody, out p.Message, allowStationary);
+                    p.Clearance = new Vector3[p.Result.Length];
+                    if (prior != null && prior.pieces.TryGetValue(renderer, out var earlier) && earlier.Error == null)
+                        p.Previous = Array.ConvertAll(earlier.Result, p.ToBody.MultiplyVector);
                     p.Rest = Array.ConvertAll(p.Local, p.ToBody.MultiplyPoint3x4);
                     p.Motion = Array.ConvertAll(p.Result, p.ToBody.MultiplyVector);
                     for (int section = 0; section < p.Source.subMeshCount; section++)
@@ -162,7 +199,7 @@ namespace MilltinaBreastGenerator
             var skin = new Piece
             {
                 Source = body.sharedMesh, Rest = source.Positions,
-                Motion = source.Deltas, ToBody = Matrix4x4.identity, IsBody = true
+                Motion = bodyMotion, Previous = prior?.bodyMotion, ToBody = Matrix4x4.identity, IsBody = true
             };
             BuildSurfaces(skin);
             // Read a common snapshot for every piece, then publish accepted movement together.
@@ -193,7 +230,7 @@ namespace MilltinaBreastGenerator
                     {
                         var points = new Vector3[p.Rest.Length];
                         float t = (step + 1) * .5f;
-                        for (int i = 0; i < points.Length; i++) points[i] = p.Rest[i] + t * p.Motion[i];
+                        for (int i = 0; i < points.Length; i++) points[i] = p.Rest[i] + p.At(i, t);
                         p.Fitted[step].Refit(points);
                     }
                 }
@@ -205,7 +242,7 @@ namespace MilltinaBreastGenerator
             {
                 p.Fitted = null;
                 p.Surface = null;
-                p.Rest = p.Motion = p.Local = null;
+                p.Rest = p.Motion = p.Local = p.Previous = p.Clearance = null;
                 p.Weld = null;
                 p.TriangleSections.Clear();
                 p.Edges.Clear();
@@ -224,7 +261,7 @@ namespace MilltinaBreastGenerator
                     float fraction = (frame + 1) * .5f;
                     var points = new Vector3[piece.Rest.Length];
                     for (int i = 0; i < points.Length; i++)
-                        points[i] = piece.Rest[i] + piece.Motion[i] * fraction;
+                        points[i] = piece.Rest[i] + piece.At(i, fraction);
                     piece.Fitted[frame] = new ShapeTransfer.TriangleSurface(piece.Surface, points);
                 }
             }
@@ -267,11 +304,17 @@ namespace MilltinaBreastGenerator
                 {
                     var point = p.Rest[a] + p.Rest[b];
                     var motion = motionInBody[a] + motionInBody[b];
-                    if (c >= 0) { point += p.Rest[c]; motion += motionInBody[c]; }
+                    var previous = p.Previous == null ? Vector3.zero : p.Previous[a] + p.Previous[b];
+                    if (c >= 0)
+                    {
+                        point += p.Rest[c];
+                        motion += motionInBody[c];
+                        if (p.Previous != null) previous += p.Previous[c];
+                    }
                     float count = c >= 0 ? 3 : 2;
                     if (radius <= 0) return;
                     var push = Vector3.zero;
-                    inner.Constrain(point/count, motion/count, radius, ref push);
+                    inner.Constrain(point/count, previous/count, motion/count, radius, ref push);
                     if (push.sqrMagnitude < 1e-14f) return;
                     Store(a); Store(b); if (c >= 0) Store(c);
                     void Store(int i)
@@ -287,7 +330,9 @@ namespace MilltinaBreastGenerator
                 {
                     if (!pushes.TryGetValue(p.Weld[i], out var push))
                         continue;
-                    p.Result[i] += inverse.MultiplyVector(push);
+                    var total = Vector3.ClampMagnitude(p.Clearance[i] + push, radius * 2);
+                    p.Result[i] += inverse.MultiplyVector(total - p.Clearance[i]);
+                    p.Clearance[i] = total;
                 }
                 if (pushes.Count > 0)
                     p.Message += $" Surface clearance adjusted {pushes.Count} seam-welded positions.";

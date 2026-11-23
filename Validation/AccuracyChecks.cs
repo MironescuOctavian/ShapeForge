@@ -45,6 +45,18 @@ public static class AccuracyChecks
             fit.SetCorrection(cloth, 50, middle.Select(v => v * 2).ToArray());
             var editedMiddle = fit.Build(cloth, out _);
             Check(ShapeTransfer.ReadSourceDeltas(editedMiddle, "test", 50).All(v => Vector3.Distance(v, middle[0] * 2) < 1e-5f), "authored knot edit");
+            if (method == TransferMethod.Barycentric)
+            {
+                fit.SetProtection(cloth, new[] { true, false, false });
+                var protectedFit = fit.Build(cloth, out _);
+                var motion = ShapeTransfer.ReadSourceDeltas(protectedFit, "test", 50);
+                Check(motion[0] == Vector3.zero && Vector3.Distance(motion[1], middle[1] * 2) < 1e-5f,
+                    "protection masks an edited vertex without changing its neighbor");
+                Check(Vector3.Distance(fit.GeneratedMotion(cloth, 50)[0], middle[0]) < 1e-5f,
+                    "restore source is independent of later edits and protection");
+                fit.SetProtection(cloth, null);
+                UnityEngine.Object.DestroyImmediate(protectedFit);
+            }
             fit.SetCorrection(cloth, 50, ShapeTransfer.ReadSourceDeltas(result, "test", 50));
             var corrected = fit.Build(cloth, out _, middle);
             Check(ShapeTransfer.ReadSourceDeltas(corrected, "test", 50).SequenceEqual(ShapeTransfer.ReadSourceDeltas(result, "test", 50)), "draft preserves knot");
@@ -120,7 +132,41 @@ public static class AccuracyChecks
         var saved = AssetDatabase.LoadAssetAtPath<Mesh>(savedPath);
         Check(saved.GetBlendShapeFrameCount(saved.GetBlendShapeIndex("test")) == 2, "selective restore and asset reload");
         Check(ShapeTransfer.ReadSourceDeltas(saved, "test", 50).All(v => Vector3.Distance(v, middle[0]) < 1e-5f), "saved midpoint");
+        CheckLayerInterval();
         Debug.Log("SHAPEFORGE ACCURACY CHECKS PASSED");
+    }
+
+    private static void CheckLayerInterval()
+    {
+        var vertices = new[] { Vector3.zero, Vector3.right, Vector3.up };
+        var plane = new Mesh { vertices = vertices, triangles = new[] { 0, 1, 2 } };
+        try
+        {
+            var surface = new ShapeTransfer.TriangleSurface(plane, vertices);
+            const System.Reflection.BindingFlags fields = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            var type = typeof(LayerFrame).GetNestedType("Piece", System.Reflection.BindingFlags.NonPublic);
+            var floor = Activator.CreateInstance(type, true);
+            type.GetField("Rest", fields).SetValue(floor, vertices);
+            type.GetField("Range", fields).SetValue(floor, plane.bounds);
+            type.GetField("Motion", fields).SetValue(floor, new Vector3[3]);
+            type.GetField("Surface", fields).SetValue(floor, surface);
+            type.GetField("Fitted", fields).SetValue(floor, new[] { surface, surface });
+            type.GetField("IsBody", fields).SetValue(floor, true);
+            var constrain = type.GetMethod("Constrain", fields);
+            var point = new Vector3(.2f, .2f, .01f);
+            var args = new object[] { point, Vector3.back * .03f, Vector3.zero, .10f, Vector3.zero };
+            constrain.Invoke(floor, args);
+            Check(Vector3.Distance((Vector3)args[4], Vector3.forward * .01f) < 1e-6f,
+                "clear endpoints relative to neutral do not hide a crossing from the prior knot");
+            args[1] = Vector3.forward * .03f;
+            args[4] = Vector3.zero;
+            constrain.Invoke(floor, args);
+            Check((Vector3)args[4] == Vector3.zero, "clear interval gets no outward correction");
+        }
+        finally
+        {
+            UnityEngine.Object.DestroyImmediate(plane);
+        }
     }
 
     private static void Check(bool condition, string name)
