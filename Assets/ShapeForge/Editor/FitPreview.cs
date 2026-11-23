@@ -15,6 +15,9 @@ namespace MilltinaBreastGenerator
         private sealed class Piece
         {
             internal bool[] Protection;
+            internal bool[] Selection;
+            internal bool[] BrushBoundary;
+            internal Vector3[] RestWorld;
             internal SkinnedMeshRenderer Renderer;
             internal Mesh Baked;
             internal SkinnedMeshRenderer Source;
@@ -41,9 +44,22 @@ namespace MilltinaBreastGenerator
         private float size;
         private SkinnedMeshRenderer body;
         private string targetShape = ShapeTransfer.Shape;
-        private enum Brush { Grab, PushOut, Smooth, Multiply, ClearSkin, ElasticDeform, Protect, Unprotect, Restore }
-        private static readonly string[] BrushNames = { "Grab", "Push Out", "Smooth", "Multiply", "Clear Skin", "Elastic Deform", "Protect", "Unprotect", "Restore Generated" };
+        private enum Brush { Grab, PushOut, Smooth, Multiply, ClearSkin, ElasticDeform, Protect, Unprotect, Restore, Relax }
+        private static readonly string[] BrushNames = { "Grab", "Push Out", "Smooth", "Multiply", "Clipping Brush", "Elastic Deform", "Protect", "Unprotect", "Restore Brush", "Relax" };
         private Brush brushMode;
+        private float brushStrength = .5f;
+        private float brushGapMm = .5f;
+        private int brushReference;
+        private bool restoreOriginal;
+        private bool boxMode;
+        private bool boxDragging;
+        private int boxControl;
+        private Vector2 boxStart, boxEnd;
+        private bool stampQueued;
+        private Rect stampViewport;
+        private Vector2 stampPosition, lastStampPosition;
+        private bool stampThroughBody;
+        private bool SurfaceBrush => brushMode is Brush.ClearSkin or Brush.Restore or Brush.Relax;
         private float transferMultiplier = 1.2f;
         private Vector3[] strokeNormals;
         private Vector3[] strokeSmooth;
@@ -265,6 +281,7 @@ namespace MilltinaBreastGenerator
             }
 
             HandleHistoryShortcut();
+            HandleBoxShortcut();
             HandleSpanShortcut();
             var toolbar = new Rect(16, 10, position.width - 32, position.height - 20);
             var input = Event.current;
@@ -411,6 +428,10 @@ namespace MilltinaBreastGenerator
             if (straighten || sculpt)
                 using (new EditorGUILayout.HorizontalScope()) DrawToolSettings();
 
+            if (sculpt && SurfaceBrush && !boxMode)
+                using (new EditorGUILayout.HorizontalScope()) DrawSurfaceBrushSettings();
+            if (boxMode)
+                OverlayLabel("Drag: replace · Shift: add · Ctrl/Cmd: subtract · Alt: select through · Esc: clear", EditorStyles.wordWrappedMiniLabel);
             if (sculpt)
             {
                 using (new EditorGUILayout.HorizontalScope())
@@ -559,8 +580,12 @@ namespace MilltinaBreastGenerator
         private void DrawEditTools()
         {
             OverlayHeading("Edit");
+            if (OverlayButton(new GUIContent("Box", "B toggles box selection. Drag to select vertices on the active mesh."), boxMode))
+                ToggleBoxMode();
             if (OverlayButton(SculptHelp, sculpt))
             {
+                CancelBox();
+                boxMode = false;
                 sculpt = !sculpt;
                 straighten = false;
                 ClearSpan();
@@ -573,6 +598,8 @@ namespace MilltinaBreastGenerator
             if (OverlayButton(new GUIContent("↔  Straighten Span",
                 "Pick the two ends of a strap. Review the highlighted strip, then apply."), straighten))
             {
+                CancelBox();
+                boxMode = false;
                 straighten = !straighten;
                 sculpt = false;
                 ClearSpan();
@@ -612,7 +639,7 @@ namespace MilltinaBreastGenerator
             else if (sculpt)
             {
                 OverlayHeading("Brush");
-                brushMode = (Brush)EditorGUILayout.Popup((int)brushMode, BrushNames, GUILayout.Width(112));
+                brushMode = (Brush)EditorGUILayout.Popup((int)brushMode, BrushNames, GUILayout.Width(122));
                 LastControlHelp(BrushHint());
                 if (brushMode == Brush.Multiply)
                 {
@@ -628,6 +655,35 @@ namespace MilltinaBreastGenerator
 
         }
 
+        private void DrawSurfaceBrushSettings()
+        {
+            GUILayout.Label("Strength", EditorStyles.whiteMiniLabel, GUILayout.Width(51));
+            brushStrength = EditorGUILayout.Slider(brushStrength, .05f, 1f, GUILayout.Width(112));
+            if (brushMode == Brush.ClearSkin)
+            {
+                GUILayout.Label("Gap (mm)", EditorStyles.whiteMiniLabel, GUILayout.Width(53));
+                brushGapMm = EditorGUILayout.Slider(brushGapMm, 0, 10, GUILayout.Width(105));
+                brushReference = SafeBrushReference;
+                var names = new string[pieces.Count - 1];
+                names[0] = "Body";
+                for (int i = 1, row = 1; i < pieces.Count; i++)
+                    if (i != selectedMesh + 1) names[row++] = editableNames[i - 1].text;
+                int current = brushReference > selectedMesh + 1 ? brushReference - 1 : brushReference;
+                int choice = EditorGUILayout.Popup(current, names, GUILayout.Width(115));
+                brushReference = choice > selectedMesh ? choice + 1 : choice;
+                LastControlHelp("Reference surface for the clipping brush.");
+            }
+            if (brushMode == Brush.Restore)
+            {
+                restoreOriginal = EditorGUILayout.Popup(restoreOriginal ? 1 : 0,
+                    RestoreTargets, GUILayout.Width(145)) == 1;
+                LastControlHelp("Restore generated motion or recover the original fabric shape in place.");
+            }
+        }
+
+        private static readonly string[] RestoreTargets = { "As generated", "Original in place" };
+        private int SafeBrushReference => brushReference >= pieces.Count || brushReference == selectedMesh + 1 ? 0 : brushReference;
+
         private void DrawSymmetryToggle(string label, string help, int axis)
         {
             if (OverlayButton(new GUIContent(label, help), (symmetryAxes & axis) != 0))
@@ -642,8 +698,9 @@ namespace MilltinaBreastGenerator
             Brush.ElasticDeform => "Drag the fabric · Nearby vertices follow with a soft falloff",
             Brush.Protect => "Click to protect vertices from transferred movement and corrections",
             Brush.Unprotect => "Click protected vertices to restore their movement",
-            Brush.Restore => "Click to restore the generated motion inside the brush",
-            Brush.ClearSkin => "Click a poke-through to lift the fabric off the skin",
+            Brush.Restore => "Drag to restore the selected reference inside the brush",
+            Brush.Relax => "Drag to even out vertex spacing while holding the garment boundary",
+            Brush.ClearSkin => "Drag over a poke-through to lift fabric toward the selected surface gap",
             _ => "Left-drag to grab · Alt-grab through skin · Shift-drag for depth · Scroll to resize"
         };
 
@@ -657,6 +714,7 @@ namespace MilltinaBreastGenerator
             if (selection != selectedMesh)
             {
                 EndStroke();
+                CancelBox();
                 ClearSpan();
                 status = null;
                 selectedMesh = selection;
@@ -710,7 +768,7 @@ namespace MilltinaBreastGenerator
         private void HandleSpanShortcut()
         {
             var input = Event.current;
-            if (!straighten || input.type != EventType.KeyDown || EditorGUIUtility.editingTextField)
+            if (boxMode || !straighten || input.type != EventType.KeyDown || EditorGUIUtility.editingTextField)
                 return;
             if (input.keyCode == KeyCode.Escape)
                 ClearSpan();
@@ -761,7 +819,7 @@ namespace MilltinaBreastGenerator
             camera.farClipPlane = distance + size * 12;
             camera.transform.SetPositionAndRotation(focus + pan + direction * distance, rotation);
             camera.aspect = rect.width / rect.height;
-            if (!overControls || flying || panning || strokePiece != null)
+            if (!overControls || flying || panning || boxDragging || strokePiece != null)
                 Navigate(rect, rotation, distance);
             if (Event.current.type != EventType.Repaint)
                 return;
@@ -812,10 +870,11 @@ namespace MilltinaBreastGenerator
             if (viewImage)
                 GUI.DrawTexture(rect, viewImage, ScaleMode.StretchToFill, false);
             DrawVertexDots(rect);
-            if (!overControls || strokePiece != null)
+            DrawSelection(rect);
+            if (!boxMode && (!overControls || strokePiece != null))
                 DrawFootprint(rect);
             DrawSpan(rect);
-            if (!overControls)
+            if (!boxMode && !overControls)
                 DrawPickCandidate(rect);
             if (sculpt && (brushMode is Brush.Protect or Brush.Unprotect))
                 DrawProtection(rect);
@@ -870,13 +929,33 @@ namespace MilltinaBreastGenerator
 
             switch (input.GetTypeForControl(control))
             {
+                case EventType.MouseDown when boxMode && input.button == 0 && GUIUtility.hotControl == 0 && rect.Contains(input.mousePosition):
+                    boxDragging = true;
+                    boxControl = control;
+                    boxStart = boxEnd = input.mousePosition;
+                    GUIUtility.hotControl = control;
+                    input.Use();
+                    Repaint();
+                    break;
+                case EventType.MouseDrag when boxDragging && GUIUtility.hotControl == control:
+                    boxEnd = input.mousePosition;
+                    input.Use();
+                    Repaint();
+                    break;
+                case EventType.MouseUp when boxDragging && input.button == 0 && GUIUtility.hotControl == control:
+                    boxEnd = input.mousePosition;
+                    SelectBox(rect, input.shift, input.control || input.command, input.alt);
+                    CancelBox();
+                    input.Use();
+                    Repaint();
+                    break;
                 case EventType.MouseMove when (sculpt || straighten) && EditableFrame && !flying:
                     hoverMouse = input.mousePosition;
                     Repaint();
                     break;
                 case EventType.ScrollWheel when strokePiece != null:
                     brushRadius = Mathf.Clamp(brushRadius * Mathf.Exp(-input.delta.y * .08f), size * .015f, size * .5f);
-                    if (strokeMoved)
+                    if (strokeMoved && !SurfaceBrush)
                         QueueDrag(rect, strokeCurrent, strokeInDepth);
                     input.Use();
                     Repaint();
@@ -899,7 +978,14 @@ namespace MilltinaBreastGenerator
                     sculpt && EditableFrame:
                     if (BeginStroke(rect, input.mousePosition, input.alt || brushMode == Brush.ClearSkin))
                     {
-                        if (brushMode is Brush.Multiply or Brush.ClearSkin or Brush.Protect or Brush.Unprotect or Brush.Restore)
+                        if (SurfaceBrush)
+                        {
+                            strokeControl = control;
+                            GUIUtility.hotControl = control;
+                            lastStampPosition = input.mousePosition;
+                            StampBrush();
+                        }
+                        else if (brushMode is Brush.Multiply or Brush.Protect or Brush.Unprotect)
                         {
                             StampBrush();
                             EndStroke();
@@ -913,7 +999,15 @@ namespace MilltinaBreastGenerator
                     input.Use();
                     break;
                 case EventType.MouseDrag when strokePiece != null && GUIUtility.hotControl == control:
-                    QueueDrag(rect, input.mousePosition, input.shift);
+                    if (SurfaceBrush)
+                    {
+                        stampQueued = true;
+                        stampViewport = rect;
+                        stampPosition = input.mousePosition;
+                        stampThroughBody = input.alt || brushMode == Brush.ClearSkin;
+                    }
+                    else
+                        QueueDrag(rect, input.mousePosition, input.shift);
                     input.Use();
                     break;
                 case EventType.MouseUp when input.button == 0 && strokePiece != null && GUIUtility.hotControl == control:
@@ -969,6 +1063,11 @@ namespace MilltinaBreastGenerator
         private void Update()
         {
             AdvanceClipping();
+            if (stampQueued && strokePiece != null && EditorApplication.timeSinceStartup >= nextDragUpdate)
+            {
+                ApplyQueuedStamp();
+                nextDragUpdate = EditorApplication.timeSinceStartup + 1.0 / 24;
+            }
             if (pendingDrag && strokePiece != null && EditorApplication.timeSinceStartup >= nextDragUpdate)
             {
                 pendingDrag = false;
@@ -994,6 +1093,7 @@ namespace MilltinaBreastGenerator
         private void OnLostFocus()
         {
             StopFlying();
+            CancelBox();
             EndStroke();
         }
 
@@ -1005,6 +1105,96 @@ namespace MilltinaBreastGenerator
             flying = false;
             flyKeys.Clear();
         }
+
+        private void HandleBoxShortcut()
+        {
+            var input = Event.current;
+            if (input.type != EventType.KeyDown || EditorGUIUtility.editingTextField || input.control || input.command || input.alt)
+                return;
+            if (input.keyCode == KeyCode.B)
+                ToggleBoxMode();
+            else if (input.keyCode == KeyCode.Escape && (boxMode || boxDragging || pieces[selectedMesh + 1].Selection != null))
+            {
+                if (!boxDragging) pieces[selectedMesh + 1].Selection = null;
+                CancelBox();
+            }
+            else return;
+            input.Use();
+            Repaint();
+        }
+
+        private void ToggleBoxMode()
+        {
+            EndStroke();
+            CancelBox();
+            boxMode = !boxMode;
+        }
+
+        private void CancelBox()
+        {
+            if (boxDragging && GUIUtility.hotControl == boxControl) GUIUtility.hotControl = 0;
+            boxDragging = false;
+        }
+
+        private Rect BoxRect => Rect.MinMaxRect(Mathf.Min(boxStart.x, boxEnd.x), Mathf.Min(boxStart.y, boxEnd.y),
+            Mathf.Max(boxStart.x, boxEnd.x), Mathf.Max(boxStart.y, boxEnd.y));
+
+        private void SelectBox(Rect viewport, bool add, bool subtract, bool through)
+        {
+            var piece = pieces[selectedMesh + 1];
+            if (piece.BrushWeld == null) BuildBrushGraph(piece);
+            var selection = add || subtract ? piece.Selection ?? new bool[piece.World.Length] : new bool[piece.World.Length];
+            var box = BoxRect;
+            if (box.width >= 2 && box.height >= 2)
+                for (int i = 0; i < piece.World.Length; i++)
+                {
+                    var point = preview.camera.WorldToViewportPoint(piece.World[i]);
+                    var screen = new Vector2(viewport.x + point.x * viewport.width, viewport.y + (1 - point.y) * viewport.height);
+                    if (point.z > 0 && viewport.Contains(screen) && box.Contains(screen) &&
+                        (through || VertexVisible(piece, i)))
+                        selection[piece.BrushWeld[i]] = !subtract;
+                }
+            piece.Selection = null;
+            for (int i = 0; i < selection.Length; i++)
+                if (selection[i]) { piece.Selection = selection; break; }
+        }
+
+        private void DrawSelection(Rect viewport)
+        {
+            var piece = pieces[selectedMesh + 1];
+            if (piece.Selection != null)
+                for (int i = 0; i < piece.World.Length; i++)
+                {
+                    if (!piece.Selection[piece.BrushWeld[i]] || piece.BrushWeld[i] != i) continue;
+                    var point = preview.camera.WorldToViewportPoint(piece.World[i]);
+                    if (point.z <= 0 || point.x < 0 || point.y < 0 || point.x > 1 || point.y > 1 || !VertexVisible(piece, i))
+                        continue;
+                    float half = vertexSize * .5f;
+                    EditorGUI.DrawRect(new Rect(viewport.x + point.x * viewport.width - half,
+                        viewport.y + (1 - point.y) * viewport.height - half, vertexSize, vertexSize),
+                        new Color(0.30f, .76f, 1f, .9f));
+                }
+            if (boxDragging)
+            {
+                var box = BoxRect;
+                box.xMin = Mathf.Max(box.xMin, viewport.xMin);
+                box.yMin = Mathf.Max(box.yMin, viewport.yMin);
+                box.xMax = Mathf.Min(box.xMax, viewport.xMax);
+                box.yMax = Mathf.Min(box.yMax, viewport.yMax);
+                if (box.width > 0 && box.height > 0)
+                {
+                    EditorGUI.DrawRect(box, new Color(.30f, .76f, 1f, .18f));
+                    var border = new Color(.30f, .76f, 1f);
+                    EditorGUI.DrawRect(new Rect(box.x, box.y, box.width, 1), border);
+                    EditorGUI.DrawRect(new Rect(box.x, box.yMax - 1, box.width, 1), border);
+                    EditorGUI.DrawRect(new Rect(box.x, box.y, 1, box.height), border);
+                    EditorGUI.DrawRect(new Rect(box.xMax - 1, box.y, 1, box.height), border);
+                }
+            }
+        }
+
+        private static bool InSelection(Piece piece, int vertex) =>
+            piece.Selection == null || piece.Selection[piece.BrushWeld[vertex]];
 
         private Piece Pick(Rect rect, Vector2 mouse, out Vector3 center, out (int A, int B, int C) face, bool throughBody = false)
         {
@@ -1267,7 +1457,7 @@ namespace MilltinaBreastGenerator
             var motion = (Vector3[])previous.Clone();
             var inverse = piece.Renderer.worldToLocalMatrix;
             for (int i = 0; i < motion.Length; i++)
-                if (piece.Protection == null || !piece.Protection[i])
+                if (InSelection(piece, i) && (piece.Protection == null || !piece.Protection[i]))
                     motion[i] += inverse.MultiplyVector(spanOffsets[i]) * spanStrength;
             brushUndo.Push((piece, weight, previous, null));
             brushRedo.Clear();
@@ -1297,7 +1487,15 @@ namespace MilltinaBreastGenerator
             strokeMouse = mouse;
             strokeDepth = preview.camera.WorldToViewportPoint(center).z;
             strokeCenter = center;
-            strokeBrushes = BrushCopies(piece, center, face, size * .5f);
+            PrepareBrushFootprint(piece, center, face, throughBody, SurfaceBrush ? brushRadius : size * .5f);
+            return true;
+        }
+
+        private void PrepareBrushFootprint(Piece piece, Vector3 center, (int A, int B, int C) face,
+            bool throughBody, float reach)
+        {
+            strokeCenter = center;
+            strokeBrushes = BrushCopies(piece, center, face, reach);
             strokeVisible = new bool[piece.World.Length];
             for (int i = 0; i < strokeVisible.Length; i++)
             {
@@ -1314,7 +1512,18 @@ namespace MilltinaBreastGenerator
                     }
                 }
             }
-            return true;
+        }
+
+        private void ApplyQueuedStamp()
+        {
+            stampQueued = false;
+            if ((stampPosition - lastStampPosition).sqrMagnitude < 9) return;
+            var piece = Pick(stampViewport, stampPosition, out var center, out var face, stampThroughBody);
+            if (piece != strokePiece) return;
+            lastStampPosition = stampPosition;
+            strokeThroughBody = stampThroughBody;
+            PrepareBrushFootprint(piece, center, face, stampThroughBody, brushRadius);
+            StampBrush();
         }
 
         private void DrawVertexDots(Rect rect)
@@ -1374,6 +1583,7 @@ namespace MilltinaBreastGenerator
 
             for (int i = 0; i < piece.World.Length; i++)
             {
+                if (!InSelection(piece, i)) continue;
                 float distance = float.PositiveInfinity;
                 bool mirrored = false;
                 foreach (var brush in brushes)
@@ -1494,15 +1704,10 @@ namespace MilltinaBreastGenerator
             // Rest edge lengths keep the brush stable as the fabric is dragged.
             var rest = piece.Original.vertices;
             var worldRest = Array.ConvertAll(rest, piece.Renderer.localToWorldMatrix.MultiplyPoint3x4);
-            var weld = piece.BrushWeld = new int[rest.Length];
+            var weld = piece.BrushWeld = ShapeTransfer.SeamPartners(piece.Original, rest);
             var edges = piece.BrushEdges = new List<(int Target, float Length)>[rest.Length];
-            var groups = new Dictionary<Vector3, int>();
-            for (int i = 0; i < rest.Length; i++)
-            {
-                if (!groups.TryGetValue(rest[i], out int representative))
-                    groups.Add(rest[i], representative = i);
-                weld[i] = representative;
-            }
+            var boundary = piece.BrushBoundary = new bool[rest.Length];
+            var counts = new Dictionary<(int, int), int>();
             foreach (var face in piece.Faces)
             {
                 AddEdge(face.A, face.B);
@@ -1510,11 +1715,19 @@ namespace MilltinaBreastGenerator
                 AddEdge(face.C, face.A);
             }
 
+            foreach (var edge in counts)
+                if (edge.Value != 2)
+                    boundary[edge.Key.Item1] = boundary[edge.Key.Item2] = true;
+
             void AddEdge(int a, int b)
             {
                 int from = weld[a], to = weld[b];
                 if (from == to)
                     return;
+                var key = from < to ? (from, to) : (to, from);
+                counts.TryGetValue(key, out int count);
+                counts[key] = count + 1;
+                if (count > 0) return;
                 float length = Vector3.Distance(worldRest[a], worldRest[b]);
                 (edges[from] ??= new List<(int, float)>()).Add((to, length));
                 (edges[to] ??= new List<(int, float)>()).Add((from, length));
@@ -1545,7 +1758,7 @@ namespace MilltinaBreastGenerator
             var inverse = strokePiece.Renderer.worldToLocalMatrix;
             for (int i = 0; i < motion.Length; i++)
             {
-                if (!strokeVisible[strokePiece.BrushWeld[i]] || (strokePiece.Protection != null && strokePiece.Protection[i]))
+                if (!InSelection(strokePiece, i) || !strokeVisible[strokePiece.BrushWeld[i]] || (strokePiece.Protection != null && strokePiece.Protection[i]))
                     continue;
                 float nearest = float.PositiveInfinity;
                 var direction = Vector3.zero;
@@ -1606,11 +1819,13 @@ namespace MilltinaBreastGenerator
 
         private void StampBrush()
         {
-            var motion = (Vector3[])strokeStart.Clone();
+            using var sample = BrushSample.Auto();
+            var original = CurrentMotion(strokePiece);
+            var motion = (Vector3[])original.Clone();
             var falloff = new float[motion.Length];
             for (int i = 0; i < motion.Length; i++)
             {
-                if (!strokeVisible[strokePiece.BrushWeld[i]])
+                if (!InSelection(strokePiece, i) || !strokeVisible[strokePiece.BrushWeld[i]])
                     continue;
                 float nearest = float.PositiveInfinity;
                 foreach (var brush in strokeBrushes)
@@ -1640,10 +1855,17 @@ namespace MilltinaBreastGenerator
             }
             if (brushMode == Brush.Restore)
             {
-                var generatedMotion = previewFit.GeneratedMotion(strokePiece.Source, weight);
-                for (int i = 0; i < motion.Length; i++)
-                    motion[i] = Vector3.Lerp(motion[i], generatedMotion[i], falloff[i]);
+                if (restoreOriginal)
+                    RestoreInPlace(strokePiece, falloff, motion);
+                else
+                {
+                    var generatedMotion = previewFit.GeneratedMotion(strokePiece.Source, weight);
+                    for (int i = 0; i < motion.Length; i++)
+                        motion[i] = Vector3.Lerp(motion[i], generatedMotion[i], falloff[i] * brushStrength);
+                }
             }
+            else if (brushMode == Brush.Relax)
+                RelaxSurface(strokePiece, falloff, motion);
             else if (brushMode == Brush.Multiply)
             {
                 for (int i = 0; i < motion.Length; i++)
@@ -1651,34 +1873,37 @@ namespace MilltinaBreastGenerator
             }
             else
             {
-                var skin = PickSurface(pieces[0]);
-                if (skin == null)
-                    return;
-                float winding = Mathf.Sign(pieces[0].Renderer.localToWorldMatrix.determinant);
-                ApplySkinClearance(strokePiece, skin, winding, brushRadius, falloff, motion);
+                var reference = pieces[SafeBrushReference];
+                var surface = PickSurface(reference);
+                if (surface == null) return;
+                float winding = Mathf.Sign(reference.Renderer.localToWorldMatrix.determinant);
+                ApplyClearance(strokePiece, surface, winding, brushRadius, falloff, motion, brushGapMm * .001f, brushStrength);
             }
 
             for (int i = 0; i < motion.Length; i++)
             {
-                if (strokePiece.Protection != null && strokePiece.Protection[i])
-                    motion[i] = strokeStart[i];
+                if (falloff[i] <= 0 || (strokePiece.Protection != null && strokePiece.Protection[i]))
+                    motion[i] = original[i];
             }
             for (int i = 0; i < motion.Length; i++)
             {
-                if (motion[i].Equals(strokeStart[i])) continue;
+                if (motion[i].Equals(original[i])) continue;
                 ApplyDraft(strokePiece, motion);
                 strokeMoved = true;
                 return;
             }
-            status = brushMode == Brush.ClearSkin ? "No reliably identified skin crossing inside the brush." :
-                "No transferred motion inside the brush at this strength.";
+            status = brushMode == Brush.ClearSkin ? "No reliable intersection with the chosen reference inside the brush." :
+                "No editable vertices changed inside the brush.";
         }
 
         private static void ApplySkinClearance(Piece piece, ShapeTransfer.TriangleSurface skin,
-            float winding, float radius, float[] falloff, Vector3[] motion)
+            float winding, float radius, float[] falloff, Vector3[] motion) =>
+            ApplyClearance(piece, skin, winding, radius, falloff, motion, Mathf.Clamp(radius * .04f, .00015f, .001f), 1);
+
+        private static void ApplyClearance(Piece piece, ShapeTransfer.TriangleSurface skin,
+            float winding, float radius, float[] falloff, Vector3[] motion, float padding, float strength)
         {
             var pushes = new Vector3[motion.Length];
-            float padding = Mathf.Clamp(radius * .04f, .00015f, .001f);
             float pieceWinding = Mathf.Sign(piece.Renderer.localToWorldMatrix.determinant);
             foreach (var face in piece.Faces)
             {
@@ -1707,7 +1932,7 @@ namespace MilltinaBreastGenerator
                 expanded[i] += mean * (.28f * falloff[i] / edges.Count);
             }
             for (int i = 0; i < motion.Length; i++)
-                motion[i] += inverse.MultiplyVector(expanded[piece.BrushWeld[i]]);
+                motion[i] += inverse.MultiplyVector(Vector3.ClampMagnitude(expanded[piece.BrushWeld[i]], radius * .35f * strength));
 
             void Sample(int a, int b, int c, Vector3 normal)
             {
@@ -1716,10 +1941,10 @@ namespace MilltinaBreastGenerator
                     return;
                 var outward = skin.Normal(face) * winding;
                 float gap = Vector3.Dot(outward, offset);
-                if (gap >= 0 || gap > -offset.magnitude * .8f || Vector3.Dot(normal, outward) < .5f)
+                if (gap >= padding || Mathf.Abs(gap) < offset.magnitude * .8f || Vector3.Dot(normal, outward) < .5f)
                     return;
                 float influence = (falloff[a] + falloff[b] + falloff[c]) / 3f;
-                var correction = outward * (Mathf.Min(padding - gap, radius * .35f) * influence);
+                var correction = outward * (Mathf.Min(padding - gap, radius * .35f) * influence * strength);
                 Store(a);
                 Store(b);
                 Store(c);
@@ -1735,6 +1960,8 @@ namespace MilltinaBreastGenerator
 
         private void EndStroke(bool rebake = true)
         {
+            if (rebake && stampQueued && strokePiece != null) ApplyQueuedStamp();
+            stampQueued = false;
             if (strokePiece != null && GUIUtility.hotControl == strokeControl)
                 GUIUtility.hotControl = 0;
             var piece = strokePiece;
@@ -1755,6 +1982,66 @@ namespace MilltinaBreastGenerator
             strokeVisible = null;
             strokeNormals = null;
             strokeSmooth = null;
+        }
+
+        private void RestoreInPlace(Piece piece, float[] falloff, Vector3[] motion)
+        {
+            if (piece.RestWorld == null)
+            {
+                var renderer = piece.Renderer;
+                int shape = renderer.sharedMesh.GetBlendShapeIndex(targetShape);
+                var neutral = new Mesh();
+                try
+                {
+                    renderer.SetBlendShapeWeight(shape, 0);
+                    renderer.BakeMesh(neutral);
+                    piece.RestWorld = Array.ConvertAll(neutral.vertices, renderer.localToWorldMatrix.MultiplyPoint3x4);
+                }
+                finally
+                {
+                    renderer.SetBlendShapeWeight(shape, weight);
+                    DestroyImmediate(neutral);
+                }
+            }
+            if (!PreviewBrushGeometry.AlignPatch(piece.RestWorld, piece.World, falloff, out var rotation, out var offset))
+                return;
+
+            var inverse = piece.Renderer.worldToLocalMatrix;
+            for (int i = 0; i < motion.Length; i++)
+            {
+                if (falloff[i] <= 0) continue;
+                var correction = rotation * piece.RestWorld[i] + offset - piece.World[i];
+                motion[i] += inverse.MultiplyVector(Vector3.ClampMagnitude(correction, brushRadius * .25f)) * falloff[i] * brushStrength;
+            }
+        }
+
+        private void RelaxSurface(Piece piece, float[] falloff, Vector3[] motion)
+        {
+            if (piece.WorldNormals.Length != motion.Length) return;
+            var skin = PickSurface(pieces[0]);
+            var skinWinding = Mathf.Sign(pieces[0].Renderer.localToWorldMatrix.determinant);
+            var inverse = piece.Renderer.worldToLocalMatrix;
+            for (int i = 0; i < motion.Length; i++)
+            {
+                int representative = piece.BrushWeld[i];
+                var neighbors = piece.BrushEdges[representative];
+                if (falloff[i] <= 0 || piece.BrushBoundary[representative] || neighbors == null) continue;
+                var center = Vector3.zero;
+                foreach (var edge in neighbors)
+                    center += piece.World[edge.Target];
+                var point = piece.World[i];
+                var shift = PreviewBrushGeometry.RelaxShift(point, center / neighbors.Count,
+                    piece.WorldNormals[i], brushRadius * .12f, falloff[i] * brushStrength);
+                if (skin != null && skin.FindClosest(point + shift, brushRadius, out var face, out _, out var gap))
+                {
+                    var normal = skin.Normal(face) * skinWinding;
+                    float newGap = Vector3.Dot(gap, normal);
+                    float oldGap = Vector3.Dot(gap - shift, normal);
+                    if (newGap < 0 && newGap < oldGap)
+                        shift += normal * (Mathf.Min(0, oldGap) - newGap);
+                }
+                motion[i] += inverse.MultiplyVector(shift);
+            }
         }
 
         private Vector3[] CurrentMotion(Piece piece) =>
@@ -1848,7 +2135,7 @@ namespace MilltinaBreastGenerator
             float radius = Mathf.Clamp(brushRadius, size * .035f, size * .15f);
             var falloff = new float[motion.Length];
             for (int i = 0; i < falloff.Length; i++)
-                if (piece.Protection == null || !piece.Protection[i])
+                if (InSelection(piece, i) && (piece.Protection == null || !piece.Protection[i]))
                     falloff[i] = Mathf.SmoothStep(0, 1, Mathf.Clamp01(1 - Vector3.Distance(piece.World[i], patch.Point) / radius));
             ApplySkinClearance(piece, surface, Mathf.Sign(reference.Renderer.localToWorldMatrix.determinant), radius, falloff, motion);
             bool changed = false;
@@ -2068,6 +2355,7 @@ namespace MilltinaBreastGenerator
         private void Release()
         {
             StopFlying();
+            CancelBox();
             EndStroke(rebake: false);
             ClearClipping();
             previewFit = null;

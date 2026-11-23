@@ -133,7 +133,25 @@ public static class AccuracyChecks
         Check(saved.GetBlendShapeFrameCount(saved.GetBlendShapeIndex("test")) == 2, "selective restore and asset reload");
         Check(ShapeTransfer.ReadSourceDeltas(saved, "test", 50).All(v => Vector3.Distance(v, middle[0]) < 1e-5f), "saved midpoint");
         CheckLayerInterval();
+        CheckBrushGeometry();
         Debug.Log("SHAPEFORGE ACCURACY CHECKS PASSED");
+    }
+
+    private static void CheckBrushGeometry()
+    {
+        var cloth = new[] { Vector3.zero, Vector3.right, Vector3.up, Vector3.one * 10 };
+        var turned = Quaternion.Euler(37, 52, -18);
+        var translation = new Vector3(3, -4, 2);
+        var moved = Array.ConvertAll(cloth, point => turned * point + translation);
+        moved[3] = Vector3.zero;
+        Check(PreviewBrushGeometry.AlignPatch(cloth, moved, new[] { 1f, .5f, .8f, 0f },
+            out var rotation, out var offset), "restore patch alignment");
+        for (int i = 0; i < 3; i++)
+            Check(Vector3.Distance(rotation * cloth[i] + offset, moved[i]) < 1e-5f,
+                "restore keeps the reference in the fitted position and orientation");
+        var relax = PreviewBrushGeometry.RelaxShift(Vector3.zero, Vector3.one, Vector3.forward, .2f, .5f);
+        Check(relax.magnitude <= .10001f && relax.x > relax.z * 5 && relax.z > 0,
+            "relax is bounded and moves mostly along the fabric");
     }
 
     private static void CheckLayerInterval()

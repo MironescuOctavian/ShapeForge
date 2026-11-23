@@ -66,3 +66,9 @@ On the private Midnight Bikini fixture at 100%, the 95th-percentile sampled clea
 - Clipping groups nearby contacts into patches, prioritizes new and deeper samples, and can focus and apply a bounded local correction. Protect, Unprotect and Restore Generated are under Sculpt. Protection is stored in the preview draft and baked into the generated frame positions. The mask itself is not a saved preset.
 - Mouse drag work is coalesced before motion calculation and mesh rebuilding. Profiler samples identify rendering, baking, brush and clipping work. Live preview FPS was not measured.
 - Unity 6000.0.67f1 clean import and accuracy checks passed. Graphical checks rendered the preview at widths 540 and 1440 and verified that middle-mouse press, drag and release move the camera without retaining capture. The Midnight fixture retained zero sampled joint garment penetrations at 50 and 100. The skin check at 100 reduced three sampled contacts to zero after layer correction, matching the previous result. Five three-piece fits had a median of 6784 ms in this run.
+
+## Clipping, Restore, Relax and box selection
+
+Preview now has drag-to-paint Clipping, Restore and Relax tools. Clipping uses a chosen body or garment surface and an adjustable gap and strength. Restore supports generated deltas and local rigid alignment of the original fabric. Relax is bounded and leaves open boundaries in place. Box selection is per garment and restricts edits without persisting a selector on the avatar.
+
+Unity 6000.0.67f1 passed clean import, synthetic restore alignment and relaxation checks, the existing garment and Modular Avatar regression suite, and a graphical box interaction check for replace, add, subtract and clear. Rebuilt package SHA-256 is DA634F2B5F598CA0BB1F8E09AE0B45C989B0FE6722EF6571BF66609FF41464F2.
