@@ -59,3 +59,10 @@ The viewport groups mesh selection and visibility controls, adds Back and altern
 Hover and overlay repaints reuse the avatar render when camera and mesh are unchanged. Drag rebuilds are limited to 30 updates per second and defer tangent and normal generation until stroke completion. This was verified through Unity import, accuracy, private garment integration, correction history and an offset-origin symmetry case. Interactive FPS on the live project was not measured.
 
 On the private Midnight Bikini fixture at 100%, the 95th-percentile sampled clearance errors for Barycentric, Weighted and RBF were 1.29, 1.36 and 1.25 mm respectively. The fixture is not an automatic bra fit test. Barycentric remains the default.
+
+## Fit tools and preview controls
+
+- The layer pass now uses the previous accepted garment frame and previous source frame for midpoint clearance. A synthetic case verifies that a crossing reached from the previous knot gets a correction and a clear interval gets none.
+- Clipping groups nearby contacts into patches, prioritizes new and deeper samples, and can focus and apply a bounded local correction. Protect, Unprotect and Restore Generated are under Sculpt. Protection is stored in the preview draft and baked into the generated frame positions. The mask itself is not a saved preset.
+- Mouse drag work is coalesced before motion calculation and mesh rebuilding. Profiler samples identify rendering, baking, brush and clipping work. Live preview FPS was not measured.
+- Unity 6000.0.67f1 clean import and accuracy checks passed. Graphical checks rendered the preview at widths 540 and 1440 and verified that middle-mouse press, drag and release move the camera without retaining capture. The Midnight fixture retained zero sampled joint garment penetrations at 50 and 100. The skin check at 100 reduced three sampled contacts to zero after layer correction, matching the previous result. Five three-piece fits had a median of 6784 ms in this run.

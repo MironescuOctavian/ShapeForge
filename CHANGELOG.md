@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added middle-mouse panning and moved camera views and Display to the top toolbar. Help is shown only in the centered toolbar slot.
+- Grouped clipping contacts into patches with Next issue and a local Fix patch action.
+- Added Protect, Unprotect and Restore Generated brushes. Protected vertices retain their original positions across generated frames.
+- Sampled clearance between adjacent authored frames and capped accumulated correction per vertex.
+- Coalesced brush drags and added Unity Profiler samples for preview rendering, baking, brushes and clipping.
+
 - Fixed preview cleanup during an active stroke or clipping scan, fit setup error reporting, and toolbar wrapping with authored frames.
 - Reject stationary source shapes and leave user-edited Modular Avatar remaps in place during restore.
 
