@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed preview cleanup during an active stroke or clipping scan, fit setup error reporting, and toolbar wrapping with authored frames.
+- Reject stationary source shapes and leave user-edited Modular Avatar remaps in place during restore.
+
 - Branded the compact Unity window and separate fit preview as ShapeForge.
 - Moved the menu to Tools → ShapeForge → Blendshape Generator.
 - Made Generate the primary action and placed transfer and reference settings under Advanced.

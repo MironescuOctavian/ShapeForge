@@ -283,8 +283,9 @@ namespace MilltinaBreastGenerator
 
         private void DrawToolbar(float width)
         {
-            bool wide = width >= 890f;
-            bool fitAndView = width >= 630f;
+            float framePickerWidth = frameWeights.Length > 1 ? 100f : 0f;
+            bool wide = width >= 940f + framePickerWidth;
+            bool fitAndView = width >= 665f + framePickerWidth;
             using (new EditorGUILayout.HorizontalScope())
             {
                 DrawWeight(wide ? Mathf.Clamp(width * .18f, 136f, 230f) : 136f);
@@ -1550,7 +1551,7 @@ namespace MilltinaBreastGenerator
             }
         }
 
-        private void EndStroke()
+        private void EndStroke(bool rebake = true)
         {
             if (strokePiece != null && GUIUtility.hotControl == strokeControl)
                 GUIUtility.hotControl = 0;
@@ -1558,7 +1559,7 @@ namespace MilltinaBreastGenerator
             {
                 brushUndo.Push((strokePiece, weight, strokeStart));
                 brushRedo.Clear();
-                if (preview != null)
+                if (rebake && preview != null)
                     Bake();
             }
             strokeMoved = false;
@@ -1802,9 +1803,10 @@ namespace MilltinaBreastGenerator
 
         private void Release()
         {
-            previewFit = null;
             StopFlying();
-            EndStroke();
+            EndStroke(rebake: false);
+            ClearClipping();
+            previewFit = null;
             ClearSpan();
             preview?.Cleanup();
             preview = null;

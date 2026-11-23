@@ -26,10 +26,10 @@ Thumbs.db
 
 # Only ShapeForge's distributable Unity assets belong in this repository.
 /Assets/*
-!/Assets/Outfit Blendshape Generator/
-!/Assets/Outfit Blendshape Generator.meta
-/Assets/Outfit Blendshape Generator/*
-!/Assets/Outfit Blendshape Generator/Editor/
-!/Assets/Outfit Blendshape Generator/Editor.meta
-!/Assets/Outfit Blendshape Generator/README.md
-!/Assets/Outfit Blendshape Generator/README.md.meta
+!/Assets/ShapeForge/
+!/Assets/ShapeForge.meta
+/Assets/ShapeForge/*
+!/Assets/ShapeForge/Editor/
+!/Assets/ShapeForge/Editor.meta
+!/Assets/ShapeForge/README.md
+!/Assets/ShapeForge/README.md.meta

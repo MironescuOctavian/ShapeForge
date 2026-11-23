@@ -4,13 +4,13 @@
 
 1. Obtain ShapeForge.unitypackage from your development build or from GitHub Releases when available.
 2. Open Assets → Import Package → Custom Package and select the file.
-3. Import the ShapeForge tool folder. The existing folder name and Unity GUIDs support upgrades from the predecessor.
+3. Import the ShapeForge tool folder. For an existing installation, move the old tool folder to Assets/ShapeForge in Unity before importing. This preserves folder and script GUIDs and avoids duplicate scripts. Back up any generated meshes first.
 4. Open Tools → ShapeForge → Blendshape Generator.
 5. Select the avatar body, outfit and source shape, then preview or generate.
 
 ## Build the package
 
-Import or copy the tracked Assets/Outfit Blendshape Generator folder and its .meta file into a clean Unity 6000.0.67f1 project. Select the tool folder and use Assets → Export Package. Disable Include Dependencies and review the export list. Include the eight ShapeForge Editor scripts, their metadata and the bundled README. Save the package as ShapeForge.unitypackage.
+Import or copy the tracked Assets/ShapeForge folder and its .meta file into a clean Unity 6000.0.67f1 project. Select the tool folder and use Assets → Export Package. Disable Include Dependencies and review the export list. Include the eight ShapeForge Editor scripts, their metadata and the bundled README. Save the package as ShapeForge.unitypackage.
 
 ## Clean project check
 
