@@ -173,13 +173,20 @@ namespace MilltinaBreastGenerator
 
         internal static Vector3[] Fit(FitSource body, Mesh outfit, Vector3[] vertices, Matrix4x4 outfitToBody, out string warning, bool allowStationary = false)
         {
-            if (body.Peak <= 1e-6f) { warning = "Stationary frame."; return new Vector3[vertices.Length]; }
             float determinant = outfitToBody.determinant;
             if (!float.IsFinite(determinant) || Mathf.Abs(determinant) < 1e-12f)
                 throw new InvalidOperationException("The outfit transform is singular.");
 
             if (outfit.GetBlendShapeIndex(body.ShapeName) >= 0)
                 throw new InvalidOperationException("The outfit already has this shape.");
+
+            if (body.Peak <= 1e-6f)
+            {
+                if (!allowStationary)
+                    throw new InvalidOperationException("The source shape has no measurable deformation.");
+                warning = "Stationary frame.";
+                return new Vector3[vertices.Length];
+            }
 
             var source = body.Positions;
             var deformation = body.Deltas;

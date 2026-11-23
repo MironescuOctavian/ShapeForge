@@ -95,7 +95,24 @@ public static class AccuracyChecks
         string path = AssetDatabase.GUIDToAssetPath(folder);
         AssetDatabase.CreateAsset(mesh, path + "/body.asset");
         AssetDatabase.CreateAsset(cloth.sharedMesh, path + "/outfit.asset");
+        var neutral = cloth.sharedMesh;
+        mesh.AddBlendShapeFrame("stationary", 100, new Vector3[mesh.vertexCount], null, null);
+        bool rejectedStationary = false;
+        try
+        {
+            ShapeTransfer.Generate(mesh, neutral, Matrix4x4.identity, out _, "stationary");
+        }
+        catch (InvalidOperationException exception)
+        {
+            rejectedStationary = exception.Message.Contains("no measurable deformation");
+        }
+        Check(rejectedStationary, "empty source shape is rejected");
+
         GeneratorAssets.Generate(cloth, body, null, shape: "test");
+        Check(cloth.sharedMesh.bindposes.SequenceEqual(neutral.bindposes), "bind poses preserved");
+        Check(cloth.sharedMesh.boneWeights.SequenceEqual(neutral.boneWeights), "bone weights preserved");
+        Check(cloth.sharedMesh.uv.SequenceEqual(neutral.uv), "UVs preserved");
+        Check(cloth.sharedMesh.normals.SequenceEqual(neutral.normals), "base normals preserved");
         GeneratorAssets.Generate(cloth, body, null, shape: "extend");
         GeneratorAssets.Restore(cloth, GeneratorAssets.GetInfo(cloth.sharedMesh), "extend");
         string savedPath = AssetDatabase.GetAssetPath(cloth.sharedMesh);
