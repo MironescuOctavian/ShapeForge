@@ -249,7 +249,8 @@ namespace MilltinaBreastGenerator
             var toolbar = new Rect(16, 10, position.width - 32, position.height - 20);
             var input = Event.current;
             var toolbarFrame = new Rect(0, 0, position.width, toolbar.y + toolbarHeight + 8);
-            var meshPanel = new Rect(position.width - 274, toolbarFrame.yMax + 8, 262, 66);
+            float meshPanelWidth = Mathf.Clamp(position.width * .36f, 260f, 380f);
+            var meshPanel = new Rect(position.width - meshPanelWidth - 12, toolbarFrame.yMax + 8, meshPanelWidth, 66);
             bool overControls = toolbarFrame.Contains(input.mousePosition) || meshPanel.Contains(input.mousePosition);
             bool repaint = input.type == EventType.Repaint;
             if (repaint)
@@ -274,7 +275,7 @@ namespace MilltinaBreastGenerator
                 }
             }
             if (repaint) EditorGUI.DrawRect(meshPanel, new Color(.105f, .102f, .095f, .94f));
-            using (new GUILayout.AreaScope(new Rect(meshPanel.x + 8, meshPanel.y + 6, 246, 58)))
+            using (new GUILayout.AreaScope(new Rect(meshPanel.x + 8, meshPanel.y + 6, meshPanel.width - 16, 58)))
             {
                 using (new EditorGUILayout.HorizontalScope()) DrawMeshPicker();
                 using (new EditorGUILayout.HorizontalScope()) DrawVisibility();
@@ -282,14 +283,14 @@ namespace MilltinaBreastGenerator
             if (!repaint)
                 DrawViewport(viewport, overControls);
             else if (!string.IsNullOrEmpty(GUI.tooltip))
-                DrawHoverHelp(GUI.tooltip);
+                DrawHoverHelp(GUI.tooltip, meshPanel.x - 24);
         }
 
-        private void DrawHoverHelp(string tip)
+        private void DrawHoverHelp(string tip, float availableWidth)
         {
             hoverHelp ??= new GUIStyle(EditorStyles.wordWrappedLabel) { fontSize = 15, normal = { textColor = Color.white } };
             var style = hoverHelp;
-            float width = Mathf.Min(position.width - 300, 450);
+            float width = Mathf.Min(availableWidth, 450);
             float height = style.CalcHeight(new GUIContent(tip), width - 16) + 12;
             var box = new Rect(12, toolbarHeight + 26, width, height);
             EditorGUI.DrawRect(box, new Color(.105f, .102f, .095f, 1));
@@ -350,20 +351,6 @@ namespace MilltinaBreastGenerator
                 }
             }
 
-            RowDivider();
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                string hint = straighten
-                    ? !EditableFrame ? "Select an authored frame to select a span." :
-                      spanPiece == null ? "Click the first attachment point." :
-                      spanOffsets == null ? "Click the second attachment point." :
-                      "Enter applies the span. Esc clears it."
-                    : sculpt ? EditableFrame ? BrushHint()
-                        : "Select an authored frame to sculpt."
-                    : "Right-drag to look · WASD to fly · Scroll to zoom";
-                GUILayout.FlexibleSpace();
-                OverlayLabel(hint, EditorStyles.wordWrappedMiniLabel);
-            }
             if (sculpt)
             {
                 using (new EditorGUILayout.HorizontalScope())
@@ -372,25 +359,37 @@ namespace MilltinaBreastGenerator
                     DrawSymmetryToggle("Left/right", "Mirror across the avatar's centerline (X).", 1);
                     DrawSymmetryToggle("Up/down", "Mirror across the garment's vertical midpoint (Y).", 2);
                     DrawSymmetryToggle("Front/back", "Mirror across the garment's front/back midpoint (Z).", 4);
+                    if (width >= 630) DrawVertexSize();
                 }
             }
+            if (straighten || (sculpt && width < 630))
+                using (new EditorGUILayout.HorizontalScope()) DrawVertexSize();
+
             if (straighten || sculpt)
             {
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    vertexSize = EditorGUILayout.Slider(new GUIContent("Vertex display size"), vertexSize, 2, 10, GUILayout.Width(285));
-                    GUILayout.FlexibleSpace();
-                }
+                string hint = !EditableFrame ? "Select an authored frame to edit." :
+                    sculpt ? BrushHint() :
+                    spanPiece == null ? "Click the first attachment point." :
+                    spanOffsets == null ? "Click the second attachment point." :
+                    "Enter applies the span. Esc clears it.";
+                OverlayLabel(hint, EditorStyles.wordWrappedMiniLabel);
             }
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                showClipMarkers = EditorGUILayout.ToggleLeft("Show markers", showClipMarkers, GUILayout.Width(106));
-            }
+
             if (!string.IsNullOrEmpty(status))
             {
                 string line = status.Split('\n')[0];
-                GUILayout.Label(new GUIContent(line, status), EditorStyles.whiteMiniLabel, GUILayout.Height(17));
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    GUILayout.Label(new GUIContent(line, status), EditorStyles.wordWrappedMiniLabel, GUILayout.ExpandWidth(true));
+                    if (crossings.Count > 0)
+                        showClipMarkers = EditorGUILayout.ToggleLeft("Show markers", showClipMarkers, GUILayout.Width(106));
+                }
             }
+        }
+
+        private void DrawVertexSize()
+        {
+            vertexSize = EditorGUILayout.Slider(new GUIContent("Vertex display size"), vertexSize, 2, 10, GUILayout.Width(285));
         }
 
         private bool OverlayButton(GUIContent content, bool active = false, params GUILayoutOption[] options)
@@ -613,7 +612,7 @@ namespace MilltinaBreastGenerator
         private void DrawMeshPicker()
         {
             OverlayHeading("Mesh");
-            int selection = EditorGUILayout.Popup(selectedMesh, editableNames, GUILayout.Width(151));
+            int selection = EditorGUILayout.Popup(selectedMesh, editableNames, GUILayout.ExpandWidth(true), GUILayout.MinWidth(130));
             LastControlHelp("Choose the clothing piece you want to edit. Other pieces stay visible for comparison.");
             if (selection != selectedMesh)
             {
