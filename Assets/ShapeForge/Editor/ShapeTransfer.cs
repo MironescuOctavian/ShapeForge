@@ -363,7 +363,7 @@ namespace MilltinaBreastGenerator
         internal static Mesh BuildMesh(Mesh outfit, Vector3[] vertices, Vector3[] deltas, string shape = Shape)
             => BuildMesh(outfit, vertices, new[] { (100f, deltas) }, shape);
 
-        internal static Mesh BuildMesh(Mesh outfit, Vector3[] vertices, IEnumerable<(float Weight, Vector3[] Motion)> frames, string shape)
+        internal static Mesh BuildMesh(Mesh outfit, Vector3[] vertices, IEnumerable<(float Weight, Vector3[] Motion)> frames, string shape, bool calculateShading = true)
         {
             var copy = UnityEngine.Object.Instantiate(outfit);
             try
@@ -372,7 +372,9 @@ namespace MilltinaBreastGenerator
                 var bounds = copy.bounds;
                 foreach (var (weight, deltas) in frames)
                 {
-                    CalculateShading(outfit, vertices, deltas, out var normalDeltas, out var tangentDeltas);
+                    Vector3[] normalDeltas = null, tangentDeltas = null;
+                    if (calculateShading)
+                        CalculateShading(outfit, vertices, deltas, out normalDeltas, out tangentDeltas);
                     copy.AddBlendShapeFrame(shape, weight, deltas, normalDeltas, tangentDeltas);
                     for (int i = 0; i < vertices.Length; i++)
                         bounds.Encapsulate(vertices[i] + deltas[i]);

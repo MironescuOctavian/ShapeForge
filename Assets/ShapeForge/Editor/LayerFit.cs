@@ -42,7 +42,7 @@ namespace MilltinaBreastGenerator
         internal string Key(SkinnedMeshRenderer renderer) =>
             (Reverse ? "reverse:" : "") + string.Join("|", frames.Select(frame => Hash128.Compute(EditedMotion(renderer, frame.Weight, frame.Frame, out _)).ToString()));
 
-        internal Mesh Build(SkinnedMeshRenderer renderer, out string diagnostic, Vector3[] endpoint = null)
+        internal Mesh Build(SkinnedMeshRenderer renderer, out string diagnostic, Vector3[] endpoint = null, bool calculateShading = true)
         {
             var output = new List<(float, Vector3[])>();
             diagnostic = "";
@@ -52,7 +52,7 @@ namespace MilltinaBreastGenerator
                 if (weight == 100) diagnostic = message;
                 output.Add((weight, weight == 100 && endpoint != null ? endpoint : motion));
             }
-            return ShapeTransfer.BuildMesh(renderer.sharedMesh, renderer.sharedMesh.vertices, output, shape);
+            return ShapeTransfer.BuildMesh(renderer.sharedMesh, renderer.sharedMesh.vertices, output, shape, calculateShading);
         }
     }
 

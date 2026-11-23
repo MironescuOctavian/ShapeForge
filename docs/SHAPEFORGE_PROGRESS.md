@@ -51,3 +51,11 @@ See [release readiness](SHAPEFORGE_RELEASE_READINESS.md) for independently rerun
 ## Unity folder rename
 
 The current local package at C:/Programming/Unity Tools/ShapeForge/ShapeForge.unitypackage imports under Assets/ShapeForge with its original Unity metadata. Clean import and AccuracyChecks.Run passed in Unity 6000.0.67f1. SHA-256 EBB8B73633B0E51890BE0D953748ECF4F53C8477D2DAF780AC4C323133D529E1.
+
+## Preview usability and performance
+
+The viewport groups mesh selection and visibility controls, adds Back and alternating side views, and shows brush and vertex sizes. Elastic Deform and avatar-relative symmetry run in Sculpt. Straighten Span shows visible points and live destination markers. Clipping inspection has explicit scope and caps displayed markers separately from its sample count.
+
+Hover and overlay repaints reuse the avatar render when camera and mesh are unchanged. Drag rebuilds are limited to 30 updates per second and defer tangent and normal generation until stroke completion. This was verified through Unity import, accuracy, private garment integration, correction history and an offset-origin symmetry case. Interactive FPS on the live project was not measured.
+
+On the private Midnight Bikini fixture at 100%, the 95th-percentile sampled clearance errors for Barycentric, Weighted and RBF were 1.29, 1.36 and 1.25 mm respectively. The fixture is not an automatic bra fit test. Barycentric remains the default.

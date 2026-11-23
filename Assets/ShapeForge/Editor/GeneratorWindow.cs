@@ -12,6 +12,12 @@ namespace MilltinaBreastGenerator
             "Choose an outfit and a body shape. Preview the checked pieces, then Generate to save the fit. Hover over a control for help.";
 
         private const string OutfitSessionKey = "Octa.OutfitBlendshapeGenerator.Outfit";
+        private static readonly GUIContent[] ReferenceLabels =
+        {
+            new GUIContent("Body at 0%"),
+            new GUIContent("Body at 0% + other active shapes"),
+            new GUIContent("Body at 100% + other active shapes (reverse)")
+        };
         [SerializeField] private BodyReference referenceMode;
         [SerializeField] private TransferMethod transferMethod;
         [SerializeField] private bool reviewHiddenShapes;
@@ -262,7 +268,11 @@ namespace MilltinaBreastGenerator
             {
                 var nextMethod = (TransferMethod)EditorGUILayout.EnumPopup(new GUIContent("Transfer Method",
                     "Start with Barycentric, the default. Try Weighted for loose cloth or RBF for a broad change like the belly. Compare in Preview."), transferMethod);
-                var nextReference = (BodyReference)EditorGUILayout.EnumPopup(new GUIContent("Garment authored against", "Other active shapes uses the current body sliders. Target at 100 reverses the clothing slider over 0–100."), referenceMode);
+                var nextReference = (BodyReference)EditorGUILayout.Popup(
+                    new GUIContent("Outfit already fits", "Choose the body state the original outfit was made for. This controls the transfer starting point."),
+                    (int)referenceMode, ReferenceLabels);
+                if (nextReference == BodyReference.OtherActiveShapesAndTargetAt100)
+                    EditorGUILayout.HelpBox("Reverse fit: Preview Fit 0 uses body 100. Fit 100 moves toward body 0.", MessageType.Info);
                 if (nextMethod != transferMethod || nextReference != referenceMode)
                 {
                     referenceMode = nextReference;
