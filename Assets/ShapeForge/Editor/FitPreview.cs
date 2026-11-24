@@ -180,6 +180,7 @@ namespace MilltinaBreastGenerator
         internal void Start(SkinnedMeshRenderer body, SkinnedMeshRenderer[] outfits, string shape = ShapeTransfer.Shape,
             TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral)
         {
+            settingsScroll = Vector2.zero;
             Build(body, outfits, shape, method, mode);
             SelectTool(Tool.Inspect);
             if (!Application.isBatchMode && Active) BeginSceneEditing();
@@ -278,22 +279,20 @@ namespace MilltinaBreastGenerator
 
         internal void DrawSettings(float width)
         {
-            var background = new Rect(0, 0, host.position.width, host.position.height);
-            if (Event.current.type == EventType.Repaint) EditorGUI.DrawRect(background, Chrome);
-            using (new EditorGUILayout.VerticalScope(settingsPadding, GUILayout.ExpandHeight(true)))
+            using (new EditorGUILayout.VerticalScope(settingsPadding, GUILayout.ExpandHeight(false)))
             {
-                var header = GUILayoutUtility.GetRect(0, 34, GUILayout.ExpandWidth(true));
-                if (Event.current.type == EventType.Repaint)
+                using (new EditorGUILayout.HorizontalScope())
                 {
-                    EditorGUI.DrawRect(header, new Color(.142f, .133f, .118f));
-                    EditorGUI.DrawRect(new Rect(header.x, header.y, 2, header.height), Gold);
-                }
-                GUI.Label(new Rect(header.x + 10, header.y, header.width - 132, header.height),
-                    "ShapeForge · Edit Settings", EditorStyles.boldLabel);
-                if (GUI.Button(new Rect(header.xMax - 114, header.y + 5, 105, 24), "‹ Generator"))
-                {
-                    host.ShowGenerator();
-                    GUIUtility.ExitGUI();
+                    using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true)))
+                    {
+                        GUILayout.Label("Edit fit", EditorStyles.largeLabel);
+                        GUILayout.Label($"{(body ? body.name : "Body")} / {targetShape}", EditorStyles.miniLabel);
+                    }
+                    if (GUILayout.Button("‹ Generator", GUILayout.Width(105), GUILayout.Height(25)))
+                    {
+                        host.ShowGenerator();
+                        GUIUtility.ExitGUI();
+                    }
                 }
                 if (error != null) EditorGUILayout.HelpBox(error, MessageType.Warning);
                 if (!Active)
@@ -305,19 +304,30 @@ namespace MilltinaBreastGenerator
                 HandleEditKeys();
                 if (Event.current.type == EventType.Repaint) controlHelp = null;
                 DrawRowDivider();
-                using (new EditorGUI.DisabledScope(PreviewingPatch))
-                    using (new EditorGUILayout.HorizontalScope()) DrawEditTools();
-                DrawRowDivider();
-                using (var scroll = new EditorGUILayout.ScrollViewScope(settingsScroll, GUILayout.ExpandHeight(true)))
+                float bodyHeight = Mathf.Min(settingsContentHeight + 4, Mathf.Max(110, host.position.height - 120));
+                using (var scroll = new EditorGUILayout.ScrollViewScope(settingsScroll, GUILayout.Height(bodyHeight)))
                 {
                     settingsScroll = scroll.scrollPosition;
-                    if (!string.IsNullOrEmpty(status)) EditorGUILayout.LabelField(status, EditorStyles.wordWrappedMiniLabel);
-                    DrawToolControls(width - 42);
+                    using (new EditorGUILayout.VerticalScope(GUILayout.ExpandHeight(false))) DrawSettingsBody(width - 43);
+                    if (Event.current.type == EventType.Repaint)
+                    {
+                        float measured = GUILayoutUtility.GetLastRect().height;
+                        if (measured > 0 && !Mathf.Approximately(settingsContentHeight, measured))
+                        {
+                            settingsContentHeight = measured;
+                            Repaint();
+                        }
+                    }
                 }
                 DrawRowDivider();
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    if (OverlayButton(new GUIContent("Discard", "End Edit Mode and discard this draft."), false, GUILayout.Width(64)))
+                    using (new EditorGUI.DisabledScope(PreviewingPatch)) DrawHistory();
+                    if (width >= 560) GUILayout.Label(unsavedEdits ? "Unsaved corrections" : "No unsaved corrections", EditorStyles.miniLabel);
+                    GUILayout.FlexibleSpace();
+                    if (OverlayButton(new GUIContent(unsavedEdits ? "Discard" : "End Edit",
+                        unsavedEdits ? "End Edit Mode and discard unsaved corrections." : "End Edit Mode."),
+                        false, GUILayout.Width(68)))
                     {
                         if (!unsavedEdits || EditorUtility.DisplayDialog("Discard ShapeForge edits?",
                             "Discard corrections from this session?", "Discard", "Keep editing"))
@@ -327,15 +337,85 @@ namespace MilltinaBreastGenerator
                         }
                         GUIUtility.ExitGUI();
                     }
-                    GUILayout.FlexibleSpace();
-                    using (new EditorGUI.DisabledScope(PreviewingPatch)) DrawHistory();
+                    using (new EditorGUI.DisabledScope(!unsavedEdits || strokePiece != null || PreviewingPatch))
+                        if (ToolbarButton(new GUIContent("Save Corrections", "Save the corrected fit as restorable meshes."),
+                            true, ButtonStyle.Primary, GUILayout.Width(126))) FinishSaving();
                 }
+                if (unsavedEdits && width < 560) GUILayout.Label("Unsaved corrections", EditorStyles.miniLabel);
             }
             if (GUI.changed && sceneEditing) SceneView.RepaintAll();
         }
 
         private Vector2 settingsScroll;
+        private float settingsContentHeight = 245;
         private readonly GUIStyle settingsPadding = new() { padding = new RectOffset(12, 12, 10, 10) };
+
+        private void DrawSettingsBody(float width)
+        {
+            if (width < 535)
+            {
+                DrawOutfitPieces(compact: true);
+                DrawRowDivider();
+                DrawToolPanel(width);
+                return;
+            }
+            float listWidth = Mathf.Clamp(width * .26f, 150, 215);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUILayout.VerticalScope(GUILayout.Width(listWidth))) DrawOutfitPieces(compact: false);
+                if (Event.current.type == EventType.Repaint)
+                {
+                    var list = GUILayoutUtility.GetLastRect();
+                    EditorGUI.DrawRect(new Rect(list.xMax + 6, list.y, 1, list.height), RuleColor);
+                }
+                GUILayout.Space(14);
+                using (new EditorGUILayout.VerticalScope()) DrawToolPanel(width - listWidth - 16);
+            }
+        }
+
+        private void DrawOutfitPieces(bool compact)
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.Label("Outfit pieces", EditorStyles.boldLabel);
+                GUILayout.FlexibleSpace();
+                GUILayout.Label($"{editableNames.Length} editable", EditorStyles.miniLabel);
+            }
+            using (new EditorGUI.DisabledScope(PreviewingPatch))
+            {
+                if (compact)
+                {
+                    for (int i = 0; i < editableNames.Length; i += 2)
+                        using (new EditorGUILayout.HorizontalScope())
+                        {
+                            DrawOutfitPiece(i);
+                            if (i + 1 < editableNames.Length) DrawOutfitPiece(i + 1);
+                        }
+                }
+                else
+                    for (int i = 0; i < editableNames.Length; i++) DrawOutfitPiece(i);
+                bool isolate = EditorGUILayout.ToggleLeft("Isolate active mesh", isolateMesh);
+                if (isolate != isolateMesh) SetIsolateMesh(isolate);
+            }
+        }
+
+        private void DrawOutfitPiece(int index)
+        {
+            bool active = index == selectedMesh;
+            string name = editableNames[index].text;
+            if (ToolbarButton(new GUIContent(active ? $"◆  {name}" : name, $"Select {name} in Scene View."),
+                active, ButtonStyle.Row, GUILayout.MinWidth(0), GUILayout.ExpandWidth(true)) && !active)
+                SelectMesh(index);
+        }
+
+        private void DrawToolPanel(float width)
+        {
+            using (new EditorGUI.DisabledScope(PreviewingPatch))
+                using (new EditorGUILayout.HorizontalScope()) DrawEditTools();
+            DrawRowDivider();
+            DrawToolControls(width);
+            if (!string.IsNullOrEmpty(status)) EditorGUILayout.LabelField(status, EditorStyles.wordWrappedMiniLabel);
+        }
 
         private void HandleEditKeys()
         {
@@ -366,7 +446,7 @@ namespace MilltinaBreastGenerator
             var piece = pieces[selectedMesh + 1];
             using (new EditorGUILayout.HorizontalScope())
             {
-                GUILayout.Label(editableNames[selectedMesh].text, EditorStyles.boldLabel);
+                GUILayout.Label(tool == Tool.Inspect ? "Inspect fit" : ToolLabels[(int)tool], EditorStyles.boldLabel);
                 GUILayout.FlexibleSpace();
                 if (piece.SelectionCount > 0)
                 {
@@ -416,7 +496,10 @@ namespace MilltinaBreastGenerator
             }
             if (tool == Tool.Vertices || sculpt)
                 using (new EditorGUILayout.HorizontalScope()) DrawVisibility();
-            using (new EditorGUILayout.HorizontalScope()) DrawFramePicker();
+            if (tool == Tool.Inspect)
+                using (new EditorGUILayout.HorizontalScope()) DrawSceneWeight();
+            if (tool == Tool.Inspect || frameWeights.Length > 1)
+                using (new EditorGUILayout.HorizontalScope()) DrawFramePicker();
             EditorGUILayout.LabelField(controlHelp ?? ToolHint(), EditorStyles.wordWrappedMiniLabel);
         }
 
@@ -603,16 +686,13 @@ namespace MilltinaBreastGenerator
             using (new EditorGUI.DisabledScope(brushRedo.Count == 0 || strokePiece != null))
                 if (OverlayButton(new GUIContent("↷ Redo", "Redo the last preview edit (Ctrl+Y)."), false, GUILayout.Width(62)))
                     MoveHistory(brushRedo, brushUndo);
-            using (new EditorGUI.DisabledScope(brushUndo.Count == 0 || strokePiece != null))
-                if (ToolbarButton(new GUIContent("Save Corrections", "Save the previewed fit and edits as restorable meshes."), true, ButtonStyle.Primary, GUILayout.Width(126)))
-                    FinishSaving();
         }
 
         private void DrawEditTools()
         {
             DrawToolButton(Tool.Inspect, "Inspect", "Pick visible garments and compare the fit.");
             DrawToolButton(Tool.Sculpt, "Sculpt", "Grab, deform, smooth or protect areas of the garment.");
-            DrawToolButton(Tool.Vertices, "Vertex Control", "Click or box-select vertices (B), or straighten a span.");
+            DrawToolButton(Tool.Vertices, "Vertices", "Click or box-select vertices (B), or straighten a span.");
             DrawToolButton(Tool.Clipping, "Clipping", "Scan or brush clipping on the selected mesh.");
             DrawToolButton(Tool.Restore, "Restore", "Recover the generated fit or original fabric locally.");
             DrawToolButton(Tool.Relax, "Relax", "Even out vertex spacing while holding the garment boundary.");
@@ -794,15 +874,18 @@ namespace MilltinaBreastGenerator
             if (Event.current.type == EventType.Repaint) DrawOutline(picker, GUI.enabled ? Gold : RuleColor);
             SetControlHelp(picker, "Choose the clothing piece you want to edit. Other pieces stay visible for comparison.");
             if (selection != selectedMesh) SelectMesh(selection);
-            if (OverlayButton(new GUIContent("Isolate", "Show only the selected garment and the body. Other pieces stop blocking picks."),
-                isolateMesh, GUILayout.Width(52)))
-            {
-                isolateMesh = !isolateMesh;
-                InvalidateVertexVisibility();
-                ClearClipping();
-                status = null;
-                Repaint();
-            }
+            if (OverlayButton(new GUIContent("Isolate", "Show the selected garment and the body."), isolateMesh, GUILayout.Width(52)))
+                SetIsolateMesh(!isolateMesh);
+        }
+
+        private void SetIsolateMesh(bool isolate)
+        {
+            isolateMesh = isolate;
+            InvalidateVertexVisibility();
+            ClearClipping();
+            status = null;
+            Repaint();
+            if (sceneEditing) SceneView.RepaintAll();
         }
 
         private void SelectMesh(int selection)
@@ -887,6 +970,7 @@ namespace MilltinaBreastGenerator
                 ApplyDraft(piece, prior);
             }
             ClearSpan();
+            unsavedEdits = brushUndo.Count > 0;
             Repaint();
             if (sceneEditing) SceneView.RepaintAll();
         }

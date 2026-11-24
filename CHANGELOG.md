@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Redesigned docked Edit Settings with Unity’s native background, a visible outfit list, and actions directly beneath the work area. Clean sessions show End Edit.
+
 - Put Edit Settings inside the existing ShapeForge panel. Back and Resume Edit keep the draft active. The Scene View bar now carries only live fit controls and the active tool hint.
 
 - Moved fit editing into Unity’s Scene View with an Edit Mode badge, fit controls and dockable Edit Settings.

@@ -63,7 +63,10 @@ public static class SceneEditingCheck
             Check(sessionField.GetValue(host) == window && layer.Correction(inner, 100).SequenceEqual(moved),
                 "Returning from the generator must preserve the pending corrections and edit session.");
             Invoke("MoveHistory", Get("brushUndo"), Get("brushRedo"));
-            Check(((Vector3[])Invoke("CurrentMotion", piece)).SequenceEqual(start), "Undo must revert the move.");
+            Check(((Vector3[])Invoke("CurrentMotion", piece)).SequenceEqual(start) && !window.HasEdits,
+                "Undoing the last edit must restore the starting motion and clean state.");
+            Invoke("MoveHistory", Get("brushRedo"), Get("brushUndo"));
+            Check(window.HasEdits, "Redo must restore the unsaved state.");
             window.DiscardChanges();
             Check(inner.sharedMesh.blendShapeCount == 0 && outer.sharedMesh.blendShapeCount == 0,
                 "Discard must leave original outfit meshes untouched.");
