@@ -143,10 +143,9 @@ namespace MilltinaBreastGenerator
             var viewport = new Rect(0, 0, camera.pixelWidth / scale, camera.pixelHeight / scale);
             if (viewport.width <= 0 || viewport.height <= 0) return;
             float inset = Mathf.Min(48, viewport.width * .12f);
-            float overlayWidth = Mathf.Min(565, viewport.width - inset - 10);
-            bool compact = overlayWidth < 520;
-            bool narrow = overlayWidth < 300;
-            float overlayHeight = narrow ? 86 : compact ? 60 : 34;
+            float overlayWidth = Mathf.Min(430, viewport.width - inset - 10);
+            bool narrow = overlayWidth < 350;
+            float overlayHeight = narrow ? 86 : 60;
             if (tool != Tool.Inspect) overlayHeight += 25;
             var overlay = new Rect(inset, 10, overlayWidth, overlayHeight);
             var input = Event.current;
@@ -159,7 +158,7 @@ namespace MilltinaBreastGenerator
                 bool overOverlay = overlay.Contains(input.mousePosition);
                 HandleEditKeys();
                 if (repaint) DrawSceneMarkers(viewport, overOverlay);
-                DrawSceneToolbar(overlay, compact, narrow);
+                DrawSceneToolbar(overlay, narrow);
                 if (input.type != EventType.Used) Navigate(viewport, overOverlay);
             }
             finally
@@ -170,7 +169,7 @@ namespace MilltinaBreastGenerator
                 view.Repaint();
         }
 
-        private void DrawSceneToolbar(Rect overlay, bool compact, bool narrow)
+        private void DrawSceneToolbar(Rect overlay, bool narrow)
         {
             if (Event.current.type == EventType.Repaint)
             {
@@ -183,34 +182,18 @@ namespace MilltinaBreastGenerator
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     ToolbarLabel(overlay.width < 238 ? "◆ Edit Mode" : "◆ ShapeForge Edit Mode", overlay.width < 238 ? 91 : 148);
-                    if (!compact) DrawSceneFit();
-                    else GUILayout.FlexibleSpace();
-                    if (OverlayButton(new GUIContent("Settings"), false, GUILayout.Width(64)) && host)
-                        host.ShowEditSettings();
+                    if (!narrow)
+                        using (new EditorGUI.DisabledScope(PreviewingPatch)) DrawMeshPicker();
                 }
-                if (compact && !narrow)
-                    using (new EditorGUILayout.HorizontalScope()) DrawSceneFit();
                 if (narrow)
-                {
                     using (new EditorGUI.DisabledScope(PreviewingPatch))
                         using (new EditorGUILayout.HorizontalScope()) DrawMeshPicker();
-                    using (new EditorGUILayout.HorizontalScope()) DrawSceneWeight();
-                }
+                using (new EditorGUILayout.HorizontalScope()) DrawSceneWeight();
                 if (tool != Tool.Inspect)
                 {
                     var hint = $"{ToolLabels[(int)tool]} · {SceneToolHint()}";
                     GUILayout.Label(hint, EditorStyles.whiteMiniLabel, GUILayout.Height(21));
                 }
-            }
-        }
-
-        private void DrawSceneFit()
-        {
-            using (new EditorGUI.DisabledScope(PreviewingPatch))
-            {
-                DrawMeshPicker();
-                DrawGroupDivider();
-                DrawSceneWeight();
             }
         }
 
@@ -255,7 +238,7 @@ namespace MilltinaBreastGenerator
                 if (frame >= 0 && frame != current) SetFitWeight(frameWeights[frame]);
             }
             foreach (int preset in Presets)
-                if (OverlayButton(new GUIContent($"{preset}%"), weight == preset, GUILayout.Width(40))) SetFitWeight(preset);
+                if (OverlayButton(new GUIContent($"{preset}%"), weight == preset, GUILayout.Width(53))) SetFitWeight(preset);
         }
         private Ray SceneRay(Rect rect, Vector2 mouse) => EditCamera.ViewportPointToRay(
             new Vector3((mouse.x - rect.x) / rect.width, 1 - (mouse.y - rect.y) / rect.height));

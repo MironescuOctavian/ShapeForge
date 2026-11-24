@@ -410,6 +410,11 @@ namespace MilltinaBreastGenerator
 
         private void DrawToolPanel(float width)
         {
+            using (new EditorGUILayout.HorizontalScope()) DrawSceneWeight();
+            using (new EditorGUI.DisabledScope(PreviewingPatch))
+                using (new EditorGUILayout.HorizontalScope()) DrawFramePicker();
+            if (!EditableFrame) EditorGUILayout.LabelField("Inspection only at this weight.", EditorStyles.miniLabel);
+            DrawRowDivider();
             using (new EditorGUI.DisabledScope(PreviewingPatch))
                 using (new EditorGUILayout.HorizontalScope()) DrawEditTools();
             DrawRowDivider();
@@ -454,16 +459,6 @@ namespace MilltinaBreastGenerator
                     if (!PreviewingPatch && OverlayButton(new GUIContent("Clear", "Clear vertex selection."))) ClearSelection(piece);
                 }
             }
-            if (!EditableFrame)
-            {
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    EditorGUILayout.LabelField("Inspection only at this weight.", EditorStyles.miniLabel);
-                    float frame = frameWeights[frameWeights.Length - 1];
-                    if (!PreviewingPatch && OverlayButton(new GUIContent($"Go to {frame:g}", "Jump to the last editable frame.")))
-                        SetFitWeight(frame);
-                }
-            }
             if (PreviewingPatch)
             {
                 DrawPatchControls();
@@ -496,10 +491,6 @@ namespace MilltinaBreastGenerator
             }
             if (tool == Tool.Vertices || sculpt)
                 using (new EditorGUILayout.HorizontalScope()) DrawVisibility();
-            if (tool == Tool.Inspect)
-                using (new EditorGUILayout.HorizontalScope()) DrawSceneWeight();
-            if (tool == Tool.Inspect || frameWeights.Length > 1)
-                using (new EditorGUILayout.HorizontalScope()) DrawFramePicker();
             EditorGUILayout.LabelField(controlHelp ?? ToolHint(), EditorStyles.wordWrappedMiniLabel);
         }
 
@@ -516,13 +507,6 @@ namespace MilltinaBreastGenerator
             var rect = GUILayoutUtility.GetRect(1, 9, GUILayout.ExpandWidth(true));
             if (Event.current.type == EventType.Repaint)
                 EditorGUI.DrawRect(new Rect(rect.x, Mathf.Floor(rect.center.y), rect.width, 1), RuleColor);
-        }
-
-        private static void DrawGroupDivider()
-        {
-            var rect = GUILayoutUtility.GetRect(13, ControlHeight, GUILayout.ExpandWidth(false));
-            if (Event.current.type == EventType.Repaint)
-                EditorGUI.DrawRect(new Rect(Mathf.Floor(rect.center.x), rect.y + 4, 1, rect.height - 8), RuleColor);
         }
 
         private static void ToolbarLabel(string text, float width) =>
@@ -601,7 +585,7 @@ namespace MilltinaBreastGenerator
             LastControlHelp("Set the displayed size of vertex markers.");
         }
 
-        private enum ButtonStyle { Standard, Tab, Primary, Row }
+        private enum ButtonStyle { Standard, Primary, Row }
 
         private bool OverlayButton(GUIContent content, bool active = false, params GUILayoutOption[] options) =>
             ToolbarButton(content, active, ButtonStyle.Standard, options);
@@ -635,19 +619,11 @@ namespace MilltinaBreastGenerator
             if (Event.current.type == EventType.Repaint)
             {
                 bool hover = GUI.enabled && button.Contains(Event.current.mousePosition);
-                if (style == ButtonStyle.Tab)
-                {
-                    if (hover || active) EditorGUI.DrawRect(button, new Color(.16f, .142f, .12f));
-                    if (active) EditorGUI.DrawRect(new Rect(button.x + 3, button.yMax - 2, button.width - 6, 2), Gold);
-                }
-                else
-                {
-                    var fill = primary ? Gold : active ? new Color(.25f, .20f, .13f) : new Color(.16f, .16f, .175f);
-                    if (!GUI.enabled) fill = new Color(.125f, .125f, .135f);
-                    else if (hover) fill = Color.Lerp(fill, Color.white, .075f);
-                    EditorGUI.DrawRect(button, fill);
-                    DrawOutline(button, active && GUI.enabled ? Gold : RuleColor);
-                }
+                var fill = primary ? Gold : active ? new Color(.25f, .20f, .13f) : new Color(.16f, .16f, .175f);
+                if (!GUI.enabled) fill = new Color(.125f, .125f, .135f);
+                else if (hover) fill = Color.Lerp(fill, Color.white, .075f);
+                EditorGUI.DrawRect(button, fill);
+                DrawOutline(button, active && GUI.enabled ? Gold : RuleColor);
             }
             SetControlHelp(button, content.tooltip);
             bool clicked = GUI.Button(button, new GUIContent(content.text, content.image), floatingButton);
@@ -700,7 +676,7 @@ namespace MilltinaBreastGenerator
 
         private void DrawToolButton(Tool next, string label, string hint)
         {
-            if (ToolbarButton(new GUIContent(label, hint), tool == next, ButtonStyle.Tab) && tool != next)
+            if (OverlayButton(new GUIContent(label, hint), tool == next) && tool != next)
             {
                 SelectTool(next);
                 GUIUtility.ExitGUI();
@@ -874,7 +850,7 @@ namespace MilltinaBreastGenerator
             if (Event.current.type == EventType.Repaint) DrawOutline(picker, GUI.enabled ? Gold : RuleColor);
             SetControlHelp(picker, "Choose the clothing piece you want to edit. Other pieces stay visible for comparison.");
             if (selection != selectedMesh) SelectMesh(selection);
-            if (OverlayButton(new GUIContent("Isolate", "Show the selected garment and the body."), isolateMesh, GUILayout.Width(52)))
+            if (OverlayButton(new GUIContent("Isolate", "Show the selected garment and the body."), isolateMesh, GUILayout.Width(68)))
                 SetIsolateMesh(!isolateMesh);
         }
 
