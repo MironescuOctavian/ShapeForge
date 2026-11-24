@@ -39,7 +39,7 @@ namespace MilltinaBreastGenerator
         private GUIStyle checkmark;
         private GUIStyle cross;
         private GUIStyle footer;
-        private GUIStyle hoverHelp;
+        private GUIStyle hintStyle;
         private string summary;
         private MessageType summaryType;
         private FitPreview editSession;
@@ -219,7 +219,7 @@ namespace MilltinaBreastGenerator
                 normal = { textColor = EditorGUIUtility.isProSkin ? new Color(1f, 0.52f, 0.52f) : new Color(0.65f, 0.12f, 0.12f) }
             };
             footer ??= new GUIStyle(EditorStyles.wordWrappedMiniLabel);
-            hoverHelp ??= new GUIStyle(EditorStyles.wordWrappedLabel) { fontSize = 14 };
+            hintStyle ??= new GUIStyle(EditorStyles.wordWrappedLabel) { fontSize = 11 };
 
             using (new EditorGUILayout.VerticalScope(frame, GUILayout.ExpandHeight(true)))
             {
@@ -252,7 +252,7 @@ namespace MilltinaBreastGenerator
 
                 EditorGUILayout.Space(8);
                 using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
-                    EditorGUILayout.LabelField(string.IsNullOrEmpty(GUI.tooltip) ? Description : GUI.tooltip, hoverHelp);
+                    EditorGUILayout.LabelField(string.IsNullOrEmpty(GUI.tooltip) ? Description : GUI.tooltip, hintStyle);
             }
         }
 
