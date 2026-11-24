@@ -207,7 +207,7 @@ namespace MilltinaBreastGenerator
             }
 
             frame ??= new GUIStyle { padding = new RectOffset(12, 12, 10, 10) };
-            heading ??= new GUIStyle(EditorStyles.boldLabel) { fontSize = 21, normal = { textColor = new Color(1f, .82f, .46f) } };
+            heading ??= new GUIStyle(EditorStyles.boldLabel) { fontSize = 21 };
             checkmark ??= new GUIStyle(EditorStyles.boldLabel)
             {
                 alignment = TextAnchor.MiddleCenter,
@@ -226,11 +226,11 @@ namespace MilltinaBreastGenerator
                 var banner = GUILayoutUtility.GetRect(0, 52, GUILayout.ExpandWidth(true));
                 if (Event.current.type == EventType.Repaint)
                 {
-                    EditorGUI.DrawRect(banner, new Color(.10f, .095f, .085f));
-                    EditorGUI.DrawRect(new Rect(banner.x, banner.y, 2, banner.height), new Color(.86f, .64f, .30f));
+                    EditorGUI.DrawRect(banner, new Color(.15f, .15f, .15f));
+                    EditorGUI.DrawRect(new Rect(banner.x, banner.y, 2, banner.height), new Color(.39f, .39f, .39f));
                     GUI.Label(new Rect(banner.x + 12, banner.y + 3, banner.width - 24, 28), "ShapeForge", heading);
                     var previous = GUI.contentColor;
-                    GUI.contentColor = EditorGUIUtility.isProSkin ? new Color(.78f, .75f, .69f) : Color.white;
+                    GUI.contentColor = EditorGUIUtility.isProSkin ? new Color(.78f, .78f, .78f) : Color.white;
                     GUI.Label(new Rect(banner.x + 13, banner.y + 30, banner.width - 26, 16),
                         "Precision Blendshape Generator", EditorStyles.whiteMiniLabel);
                     GUI.contentColor = previous;
@@ -379,19 +379,16 @@ namespace MilltinaBreastGenerator
                 using (new EditorGUI.DisabledScope(selected.Length == 0 && !editing))
                 {
                     float actionWidth = Mathf.Max(90f, (position.width - 36f) * .32f);
-                    var previousColor = GUI.backgroundColor;
 
                     if (!editing && GUILayout.Button(new GUIContent("Edit", "Go to Edit Settings in ShapeForge."), GUILayout.Height(34), GUILayout.Width(actionWidth)))
                     {
                         StartEdit(body, selected.Select(p => p.Renderer).ToArray(), sourceShapeName, transferMethod);
                         GUIUtility.ExitGUI();
                     }
-                    GUI.backgroundColor = new Color(1f, .74f, .34f);
                     bool generate;
                     using (new EditorGUI.DisabledScope(editing))
                         generate = GUILayout.Button(new GUIContent($"Generate ({selected.Length})", "Save the chosen shape on each checked piece. Existing outfit shapes stay available."),
                             GUILayout.Height(34), GUILayout.Width(actionWidth));
-                    GUI.backgroundColor = previousColor;
                     if (generate)
                     {
                         LayerFit fit;

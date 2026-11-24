@@ -15,7 +15,7 @@ ShapeForge transfers body blendshapes to clothing already made for the same avat
 - Transfers shapes using Barycentric, Weighted or RBF interpolation. Barycentric is the default.
 - Preserves authored positive blendshape frames.
 - Fits selected pieces together and checks for suspect cloth and body intersections.
-- Provides a separate avatar preview with fit scrubbing, fixed views, isolation, sculpting, smoothing, Straighten Span, and correction history.
+- Provides a Scene View fit editor with fit scrubbing, cloth isolation, sculpting, smoothing, Straighten Span, and correction history.
 - Saves a separate mesh asset, preserving original mesh data, skinning, and existing shapes. Restore removes generated shapes.
 
 ## Install
@@ -28,8 +28,8 @@ In Unity, choose **Assets → Import Package → Custom Package**, select the pa
 
 1. Select the **Body Mesh**, **Outfit**, and **Source Shape**. You can drag a clothing object or the parent of several pieces from the Hierarchy.
 2. Check the eligible pieces you want to fit. Open **Advanced** to choose a transfer method.
-3. Click **Edit**. In Unity’s Scene View, look for **ShapeForge Edit Mode**, then click a visible garment or choose it in the mesh menu. Compare fit at **0**, **50**, and **100**.
-4. Open **Settings** in the Scene View bar to return to the docked ShapeForge panel. Pick the mesh in the **Outfit pieces** list. Use **‹ Generator** and **Resume Edit** to switch views without losing the draft. In **Vertex Control** (**B**), click or box-select vertices, then drag **Move**. Hold **Shift** to add or **Ctrl/Cmd** to subtract. Use **Straighten Span** for straps. For brushes, **Shift-scroll** resizes the brush and **Esc** cancels an active stroke.
+3. Click **Edit**. In Unity’s Scene View, look for **ShapeForge Edit Mode**, and start editing in **All Cloth**. Pick an individual piece from the cloth list or use **Select Cloth** in Scene View to narrow the scope. Compare fit at **0**, **50**, and **100**.
+4. Use **Back** and **Resume Edit** to switch views while keeping your draft. In **Vertex Control** (**B**), click or box-select vertices, then drag a **Move** handle to reposition that cloth patch. Hold **Shift** to add or **Ctrl/Cmd** to subtract. **Show all vertices** is optional. For **Straighten Span**, click the first attachment, middle of the strip, and other attachment. Adjust **Strip half-width** and **Span strength** before applying. For brushes, **Shift-scroll** resizes the brush and **Esc** cancels an active stroke.
 5. Click **End Edit** when the draft is clean. With unsaved corrections, choose **Save Corrections** or **Discard** to end Edit Mode. **Generate** applies the automatic fit, and **Restore** removes generated shapes.
 
 ## Unity interface

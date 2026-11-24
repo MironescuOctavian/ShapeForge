@@ -57,3 +57,7 @@ Keep authored source knots as the default. Automatic subdivision between knots, 
 ## Phase 3 disposition
 
 The editor and repository documentation now use the ShapeForge name. Barycentric remains the default and the algorithm and authored state controls live in the collapsed Advanced section. The separate preview retains its correction workflow and uses a higher contrast charcoal and gold toolbar. The tested package and interface captures are listed in the progress handoff. The approved icon and licensed outfit triptychs remain pending their source assets and publication clearance.
+
+## Scene View editing refinements
+
+The workspace opens in All Cloth with an individual cloth scope and optional isolation. Vertex Control contains patch movement and a three-point Straighten Span with width and strength controls. Generator and Edit use neutral Unity-style chrome. Further startup optimization should use measurements from a dense outfit across the separate preparation stages.

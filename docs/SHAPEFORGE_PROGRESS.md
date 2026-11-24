@@ -78,3 +78,7 @@ Unity 6000.0.67f1 passed clean import, synthetic restore alignment and relaxatio
 Scan Clipping lists patches for the selected outfit piece. Choose one to frame it. Preview fix temporarily swaps a preview mesh and keeps the stored frame correction unchanged. Apply creates a single Undo step and scans again. Cancel restores the original draft mesh. The footer shows the vertex selection and unsaved corrections.
 
 Unity 6000.0.67f1 clean import and accuracy checks passed. Validation/ClippingFlowCheck.cs verifies scan, preview, cancel, apply and Undo using a known intersection. Run it in Unity batch mode with -executeMethod ClippingFlowCheck.Run. The private preview correction suite also passed. Package SHA-256 is 0F304312009ECD0A01D7C9FAD4C7EF9E33FA2D98B0822C69A9375EDE1EF75EC7.
+
+## All Cloth and focused vertex editing
+
+Scene View editing starts in All Cloth. Sculpt and cleanup strokes act on the piece under the brush, vertex selection can cross visible pieces, and clipping scans follow the current scope. Each Move handle moves the selection on its own cloth piece. Straighten Span uses three surface anchors and a width in millimeters, with live destination markers. The Generator and Edit panels use neutral controls. Unity 6000.0.67f1 passed the accuracy, clipping, Scene View and package export checks. The Sculpt popup anchor was verified in the graphical Unity sample.

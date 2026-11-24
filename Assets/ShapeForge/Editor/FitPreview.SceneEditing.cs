@@ -130,7 +130,8 @@ namespace MilltinaBreastGenerator
                     var material = piece.Materials[i];
                     if (!material) continue;
                     Graphics.DrawMesh(piece.Baked, piece.Renderer.localToWorldMatrix, material, piece.Source.gameObject.layer,
-                        camera, i, null, ShadowCastingMode.Off, false, null, LightProbeUsage.Off);
+                        camera, i, piece.MaterialProperties[i], ShadowCastingMode.Off, piece.Source.receiveShadows,
+                        piece.Source.probeAnchor, piece.Source.lightProbeUsage);
                 }
             }
         }
@@ -175,7 +176,7 @@ namespace MilltinaBreastGenerator
             {
                 EditorGUI.DrawRect(overlay, Chrome);
                 DrawOutline(overlay, RuleColor);
-                EditorGUI.DrawRect(new Rect(overlay.x, overlay.y, 3, overlay.height), Gold);
+                EditorGUI.DrawRect(new Rect(overlay.x, overlay.y, 3, overlay.height), RuleColor);
             }
             using (new GUILayout.AreaScope(new Rect(overlay.x + 8, overlay.y + 4, overlay.width - 16, overlay.height - 8)))
             {
@@ -213,9 +214,9 @@ namespace MilltinaBreastGenerator
             if (!EditableFrame && (sculpt || straighten)) return "Choose an authored frame in Settings to edit.";
             if (PreviewingPatch) return "Review the fix, then Apply or Cancel in Settings.";
             if (sculpt) return $"{BrushLabel()} · Drag to edit. Shift-scroll to resize.";
-            if (boxMode) return pieces[selectedMesh + 1].SelectionCount > 0 ? "Drag Move to reposition." : "Click or drag to select vertices.";
+            if (boxMode) return ScopeSelectionCount > 0 ? "Drag Move to reposition." : "Click or drag to select vertices.";
             if (straighten) return ToolHint();
-            return "Scan the selected cloth in Settings.";
+            return "Scan the current cloth scope in ShapeForge.";
         }
 
         private string BrushLabel() => brushMode switch
@@ -227,7 +228,7 @@ namespace MilltinaBreastGenerator
         };
 
         private static readonly string[] ToolLabels =
-            { "Select Cloth", "Sculpt", "Move", "Clipping", "Cleanup", "Cleanup" };
+            { "Select Cloth", "Sculpt", "Vertex Control", "Clipping", "Cleanup", "Cleanup" };
 
         private void DrawFramePicker()
         {
@@ -265,8 +266,8 @@ namespace MilltinaBreastGenerator
             float age = (float)(EditorApplication.timeSinceStartup - meshPulseStarted);
             float opacity = Mathf.SmoothStep(0, 1, Mathf.Clamp01(age / .12f)) *
                 (1 - Mathf.SmoothStep(0, 1, Mathf.Clamp01((age - .24f) / .61f)));
-            var piece = pieces[selectedMesh + 1];
-            if (opacity <= 0 || !IsVisible(piece)) return;
+            var piece = ScopedPiece;
+            if (piece == null || opacity <= 0 || !IsVisible(piece)) return;
 
             if (piece.OutlineEdges == null) BuildOutlineEdges(piece);
             Vector3 origin = camera.transform.position;
@@ -351,16 +352,15 @@ namespace MilltinaBreastGenerator
             strokeStart = priorCorrection ?? previewFit.GeneratedMotion(piece.Source, weight);
         }
 
-        private bool TrySelectionHandle(Rect rect, out Vector3 projected)
+        private bool TrySelectionHandle(Piece piece, Rect rect, out Vector3 projected)
         {
             projected = default;
-            var piece = pieces[selectedMesh + 1];
             if (!EditableFrame || piece.SelectionCount == 0 || !IsVisible(piece)) return false;
             var center = Vector3.zero;
             int count = 0;
-            for (int i = 0; i < piece.World.Length; i++)
+            foreach (int i in piece.SelectedVertices)
             {
-                if (piece.BrushWeld[i] != i || !piece.Selection[i] || (piece.Protection != null && piece.Protection[i])) continue;
+                if (piece.Protection != null && piece.Protection[i]) continue;
                 center += piece.World[i];
                 count++;
             }
@@ -371,18 +371,21 @@ namespace MilltinaBreastGenerator
 
         private bool BeginMoveSelection(Rect rect, Event input, int control)
         {
-            if (input.alt || input.control || input.command || !TrySelectionHandle(rect, out var projected) ||
-                !new Rect(ScreenPoint(rect, projected) - new Vector2(21, 12), new Vector2(42, 24)).Contains(input.mousePosition))
-                return false;
-
-            CaptureStroke(pieces[selectedMesh + 1]);
-            movingSelection = true;
-            strokeMouse = input.mousePosition;
-            strokeDepth = projected.z;
-            strokeControl = control;
-            GUIUtility.hotControl = control;
-            input.Use();
-            return true;
+            if (input.alt || input.control || input.command) return false;
+            foreach (var piece in ScopedCloth())
+            {
+                if (!TrySelectionHandle(piece, rect, out var projected) ||
+                    !MoveHandleRect(rect, projected).Contains(input.mousePosition)) continue;
+                CaptureStroke(piece);
+                movingSelection = true;
+                strokeMouse = input.mousePosition;
+                strokeDepth = projected.z;
+                strokeControl = control;
+                GUIUtility.hotControl = control;
+                input.Use();
+                return true;
+            }
+            return false;
         }
 
         private static Vector3[] MoveSelectedVertices(Piece piece, Vector3[] start, Vector3 worldDelta)
@@ -397,18 +400,23 @@ namespace MilltinaBreastGenerator
 
         private void DrawMoveHandle(Rect rect)
         {
-            if (!TrySelectionHandle(rect, out var projected)) return;
-            var point = ScreenPoint(rect, projected);
-            var handle = new Rect(point.x - 21, point.y - 12, 42, 24);
-            EditorGUI.DrawRect(handle, Chrome);
-            DrawOutline(handle, Gold);
-            GUI.Label(handle, "✥ Move", EditorStyles.centeredGreyMiniLabel);
-            EditorGUIUtility.AddCursorRect(handle, MouseCursor.MoveArrow);
+            foreach (var piece in ScopedCloth())
+            {
+                if (!TrySelectionHandle(piece, rect, out var projected)) continue;
+                var handle = MoveHandleRect(rect, projected);
+                EditorGUI.DrawRect(handle, Chrome);
+                DrawOutline(handle, RuleColor);
+                GUI.Label(handle, "✥ Move", EditorStyles.centeredGreyMiniLabel);
+                EditorGUIUtility.AddCursorRect(handle, MouseCursor.MoveArrow);
+            }
         }
+
+        private static Rect MoveHandleRect(Rect rect, Vector3 projected) =>
+            new(ScreenPoint(rect, projected) - new Vector2(24, 12), new Vector2(48, 24));
 
         private void DrawClippingArrow(Rect rect, Piece piece, Vector3 center, (int A, int B, int C) face)
         {
-            var reference = pieces[SafeBrushReference];
+            var reference = BrushReference(piece);
             var surface = PickSurface(reference);
             var normal = Vector3.Cross(piece.World[face.B] - piece.World[face.A], piece.World[face.C] - piece.World[face.A]).normalized *
                 Mathf.Sign(piece.Renderer.localToWorldMatrix.determinant);

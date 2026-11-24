@@ -53,3 +53,7 @@ The layer pass has a three-iteration cap and reports when continuing motion reac
 ## Phase 3 integration checks
 
 A clean Unity 6000.0.67f1 project imported the final package and ran AccuracyChecks.Run successfully. The solver files remain identical to the Phase 2 baseline. A graphical editor session captured the main generator and the actual fit preview with a synthetic skinned mesh. The screenshot at narrow preview width confirmed that Front, Side, Top, Bottom and the 0/50/100 presets are readable.
+
+## Scene View vertex display and preparation
+
+Vertex Control draws selected representatives, hovered face vertices before a selection, or candidates inside the drag box. Show all vertices opts into drawing dense overlays. Visibility is cached per piece until the camera, geometry or visibility settings change. Startup reports fit calculation, mesh build, baking and Scene View preparation. Profiler markers distinguish these costs. Fit calculation is still synchronous, and frame rate and the reported held-click material change need confirmation on the affected outfit and shader.
