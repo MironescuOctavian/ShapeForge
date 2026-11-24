@@ -46,9 +46,45 @@ public static class FitQualityCheck
             if (p95 > c.MaxP95) failures.Add($"{c.Name}: p95 {p95 * 1000:F2} mm exceeds {c.MaxP95 * 1000:F2} mm");
             if (penetrations > c.MaxPenetrations) failures.Add($"{c.Name}: {penetrations} penetrations");
         }
+        report.AppendLine(Benchmark());
         Debug.Log(report.ToString());
         if (failures.Count > 0) throw new Exception("Fit quality regressed:\n" + string.Join("\n", failures));
         Debug.Log("SHAPEFORGE FIT QUALITY PASSED");
+    }
+
+    // Times dense, two-frame generation. Reported only, because timings depend on the machine.
+    private static string Benchmark()
+    {
+        var body = Grid(.6f, 201, 0, 0);
+        var shaped = body.vertices.Select(v => Vector3.forward * (.03f * Mathf.Exp(-(v.x * v.x + v.y * v.y) / (2 * .05f * .05f)))).ToArray();
+        body.AddBlendShapeFrame(Shape, 50, shaped.Select(v => v * .4f).ToArray(), null, null);
+        body.AddBlendShapeFrame(Shape, 100, shaped, null, null);
+        var inner = Grid(.5f, 250, .004f, .0013f);
+        var outer = Grid(.5f, 250, .012f, .0011f);
+        var bodyRenderer = new GameObject("bench body").AddComponent<SkinnedMeshRenderer>();
+        var innerRenderer = new GameObject("bench inner").AddComponent<SkinnedMeshRenderer>();
+        var outerRenderer = new GameObject("bench outer").AddComponent<SkinnedMeshRenderer>();
+        bodyRenderer.sharedMesh = body;
+        innerRenderer.sharedMesh = inner;
+        outerRenderer.sharedMesh = outer;
+        try
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var single = ShapeTransfer.Generate(body, inner, Matrix4x4.identity, out _, Shape);
+            long generate = watch.ElapsedMilliseconds;
+            UnityEngine.Object.DestroyImmediate(single);
+            watch.Restart();
+            var fit = new LayerFit(bodyRenderer, new[] { innerRenderer, outerRenderer }, Shape);
+            long layered = watch.ElapsedMilliseconds;
+            return $"benchmark ({inner.vertexCount} verts x2, 2 frames): Generate {generate} ms, LayerFit {layered} ms";
+        }
+        finally
+        {
+            foreach (var go in new[] { bodyRenderer.gameObject, innerRenderer.gameObject, outerRenderer.gameObject })
+                UnityEngine.Object.DestroyImmediate(go);
+            foreach (var mesh in new[] { body, inner, outer })
+                UnityEngine.Object.DestroyImmediate(mesh);
+        }
     }
 
     private static (float Mean, float P95, float Max, int Penetrations, float Covered) Measure(Case c)

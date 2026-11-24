@@ -10,6 +10,7 @@ namespace ShapeForge
     {
         private readonly List<(float Weight, LayerFrame Frame)> frames = new();
         private readonly string shape;
+        private readonly Dictionary<SkinnedMeshRenderer, int[]> welds = new();
 
         private readonly Dictionary<(SkinnedMeshRenderer, float), Vector3[]> edits = new();
         private readonly Dictionary<SkinnedMeshRenderer, bool[]> protection = new();
@@ -51,7 +52,7 @@ namespace ShapeForge
             LayerFrame prior = null;
             foreach (float weight in weights)
             {
-                var frame = new LayerFrame(body, renderers, shape, method, weight, weights.Count > 1, reference, Reverse, prior);
+                var frame = new LayerFrame(body, renderers, shape, method, weight, weights.Count > 1, reference, Reverse, prior, welds);
                 frames.Add((weight, frame));
                 prior = frame;
             }
@@ -153,7 +154,7 @@ namespace ShapeForge
         private readonly Vector3[] bodyMotion;
         private readonly float bodyPeak;
 
-        internal LayerFrame(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape, TransferMethod method, float weight, bool allowStationary, Vector3[] reference, bool reverse, LayerFrame prior)
+        internal LayerFrame(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape, TransferMethod method, float weight, bool allowStationary, Vector3[] reference, bool reverse, LayerFrame prior, Dictionary<SkinnedMeshRenderer, int[]> welds)
         {
             var source = new ShapeTransfer.FitSource(body.sharedMesh, shape, method, weight, reference, reverse);
             bodyMotion = source.Deltas;
@@ -168,8 +169,9 @@ namespace ShapeForge
                 try
                 {
                     p.Local = p.Source.vertices;
-                    p.Weld = ShapeTransfer.SeamPartners(p.Source, p.Local);
-                    p.Result = ShapeTransfer.Fit(source, p.Source, p.Local, p.ToBody, out p.Message, allowStationary);
+                    if (!welds.TryGetValue(renderer, out p.Weld))
+                        welds[renderer] = p.Weld = ShapeTransfer.SeamPartners(p.Source, p.Local);
+                    p.Result = ShapeTransfer.Fit(source, p.Source, p.Local, p.ToBody, out p.Message, allowStationary, p.Weld);
                     p.Clearance = new Vector3[p.Result.Length];
                     if (prior != null && prior.pieces.TryGetValue(renderer, out var earlier) && earlier.Error == null)
                         p.Previous = Array.ConvertAll(earlier.Result, p.ToBody.MultiplyVector);
@@ -289,19 +291,29 @@ namespace ShapeForge
                     if (!bounds.Intersects(p.Range)) return;
                 }
                 var motionInBody = inner.IsBody ? Array.ConvertAll(p.Result, p.ToBody.MultiplyVector) : p.Motion;
-                for (int i = 0; i < p.Rest.Length; i++) Sample(i, i, i);
+                // Samples only read the search trees, so chunks run on worker threads. Each chunk keeps
+                // its own strongest pushes and they are merged in a fixed preference order.
+                Run(p.Rest.Length, (i, local) => Sample(i, i, i, local));
                 foreach (var indices in p.TriangleSections)
+                    Run(indices.Length / 3, (t, local) => Sample(indices[t * 3], indices[t * 3 + 1], indices[t * 3 + 2], local));
+                var edgeList = new (int A, int B)[p.Edges.Count];
+                p.Edges.CopyTo(edgeList);
+                Run(edgeList.Length, (e, local) => Sample(edgeList[e].A, edgeList[e].B, -1, local));
+
+                void Run(int count, Action<int, Dictionary<int, Vector3>> each)
                 {
-                    for (int k = 0; k < indices.Length; k += 3)
+                    ShapeTransfer.ForRange(count, (start, end) =>
                     {
-                        int a = indices[k], b = indices[k+1], c = indices[k+2];
-                        Sample(a,b,c);
-                    }
+                        var local = new Dictionary<int, Vector3>();
+                        for (int i = start; i < end; i++) each(i, local);
+                        lock (pushes)
+                            foreach (var entry in local)
+                                if (!pushes.TryGetValue(entry.Key, out var prior) || Stronger(entry.Value, prior))
+                                    pushes[entry.Key] = entry.Value;
+                    }, 2048);
                 }
 
-                foreach (var (a,b) in p.Edges) Sample(a,b,-1);
-
-                void Sample(int a, int b, int c)
+                void Sample(int a, int b, int c, Dictionary<int, Vector3> store)
                 {
                     var point = p.Rest[a] + p.Rest[b];
                     var motion = motionInBody[a] + motionInBody[b];
@@ -320,10 +332,19 @@ namespace ShapeForge
                     Store(a); Store(b); if (c >= 0) Store(c);
                     void Store(int i)
                     {
-                        if (!pushes.TryGetValue(p.Weld[i], out var prior) || push.sqrMagnitude > prior.sqrMagnitude)
-                            pushes[p.Weld[i]] = push;
+                        if (!store.TryGetValue(p.Weld[i], out var prior) || Stronger(push, prior))
+                            store[p.Weld[i]] = push;
                     }
                 }
+            }
+            // Larger pushes win. Exact ties break on components so the outcome never depends on thread timing.
+            static bool Stronger(Vector3 candidate, Vector3 current)
+            {
+                float a = candidate.sqrMagnitude, b = current.sqrMagnitude;
+                if (a != b) return a > b;
+                if (candidate.x != current.x) return candidate.x > current.x;
+                if (candidate.y != current.y) return candidate.y > current.y;
+                return candidate.z > current.z;
             }
             void ApplyPushes()
             {

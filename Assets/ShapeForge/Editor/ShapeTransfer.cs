@@ -169,6 +169,20 @@ namespace ShapeForge
             }
         }
 
+        // Splits [0, count) into contiguous chunks and runs them on worker threads. Chunks write only to
+        // their own indices, so results match a serial pass. Do not touch Unity objects inside the body.
+        internal static void ForRange(int count, Action<int, int> body, int minimumChunk = 4096)
+        {
+            int workers = Math.Min(Environment.ProcessorCount, Math.Max(1, count / minimumChunk));
+            if (workers <= 1)
+            {
+                body(0, count);
+                return;
+            }
+            System.Threading.Tasks.Parallel.For(0, workers, worker =>
+                body((int)((long)count * worker / workers), (int)((long)count * (worker + 1) / workers)));
+        }
+
         // Positions are shared by split vertices, so UV and hard-edge duplicates still agree on one normal.
         private static Vector3[] VertexNormals(Mesh mesh, Vector3[] points)
         {
@@ -209,7 +223,8 @@ namespace ShapeForge
             return BuildMesh(outfit, vertices, frames, shape);
         }
 
-        internal static Vector3[] Fit(FitSource body, Mesh outfit, Vector3[] vertices, Matrix4x4 outfitToBody, out string warning, bool allowStationary = false)
+        // weld may carry a seam-partner map built earlier for this mesh and vertex array.
+        internal static Vector3[] Fit(FitSource body, Mesh outfit, Vector3[] vertices, Matrix4x4 outfitToBody, out string warning, bool allowStationary = false, int[] weld = null)
         {
             float determinant = outfitToBody.determinant;
             if (!float.IsFinite(determinant) || Mathf.Abs(determinant) < 1e-12f)
@@ -323,7 +338,7 @@ namespace ShapeForge
             if (changed == 0 && !allowStationary)
                 throw new InvalidOperationException("No outfit vertices matched the deforming body surface. Check the outfit fit, rest pose, and scale.");
 
-            var partners = SeamPartners(outfit, vertices);
+            var partners = weld ?? SeamPartners(outfit, vertices);
             var islands = FindIslands(outfit, partners, out var closed);
 
             FitConnected(outfit, partners, vertices, deltas, proximity, normals, confidence, outfitToBody, largestDelta,
@@ -347,14 +362,18 @@ namespace ShapeForge
             var motion = new Vector3[vertices.Length];
             var faceNormals = new Vector3[vertices.Length];
             var nearest = matches;
-            for (int i = 0; i < vertices.Length; i++)
+            var region = body.QueryRegion;
+            ForRange(vertices.Length, (start, end) =>
             {
-                var point = toBody.MultiplyPoint3x4(vertices[i]);
-                if (!body.QueryRegion.Contains(point) || !body.OriginalSurface.FindClosest(point, body.Radius, out var face, out var weights, out var offset)) continue;
-                nearest[i] = (true, face, weights, offset);
-                faceNormals[i] = body.OriginalSurface.Normal(face);
-                motion[i] = body.Deltas[face.A] * weights.x + body.Deltas[face.B] * weights.y + body.Deltas[face.C] * weights.z;
-            }
+                for (int i = start; i < end; i++)
+                {
+                    var point = toBody.MultiplyPoint3x4(vertices[i]);
+                    if (!region.Contains(point) || !body.OriginalSurface.FindClosest(point, body.Radius, out var face, out var weights, out var offset)) continue;
+                    nearest[i] = (true, face, weights, offset);
+                    faceNormals[i] = body.OriginalSurface.Normal(face);
+                    motion[i] = body.Deltas[face.A] * weights.x + body.Deltas[face.B] * weights.y + body.Deltas[face.C] * weights.z;
+                }
+            });
             var edges = new HashSet<(int, int)>();
             for (int part = 0; part < mesh.subMeshCount; part++)
             {
@@ -739,29 +758,36 @@ namespace ShapeForge
             for (int pass = 0; pass < 32; pass++)
             {
                 float largestChange = 0;
-                for (int i = 0; i < current.Length; i++)
+                var read = current;
+                var write = next;
+                ForRange(read.Length, (start, end) =>
                 {
-                    if (neighbors[i] == null || proximity[i] <= 0)
-                        continue;
-                    var mean = Vector3.zero;
-                    foreach (var edge in neighbors[i])
-                        mean += current[edge.Index] * edge.Weight;
-                    mean /= totals[i];
-                    var residual = target[i] - mean;
-                    float contact = target[i].sqrMagnitude > 0 ? confidence[i] : 0;
-                    var motion = mean + residual * Mathf.Lerp(.015f, .060f, contact);
-                    motion += normals[i] * (Vector3.Dot(residual, normals[i]) * contact * .14f);
-                    // A straight run can span empty space. Its two ends constrain bending
-                    // even when its midpoint projects onto a different part of the body.
-                    var span = spans[i];
-                    if (span.Strength > 0)
+                    float chunkChange = 0;
+                    for (int i = start; i < end; i++)
                     {
-                        var alongSpan = Vector3.Lerp(current[span.A], current[span.B], span.T);
-                        motion = Vector3.Lerp(motion, alongSpan, span.Strength * Mathf.Lerp(.65f, .10f, contact));
+                        if (neighbors[i] == null || proximity[i] <= 0)
+                            continue;
+                        var mean = Vector3.zero;
+                        foreach (var edge in neighbors[i])
+                            mean += read[edge.Index] * edge.Weight;
+                        mean /= totals[i];
+                        var residual = target[i] - mean;
+                        float contact = target[i].sqrMagnitude > 0 ? confidence[i] : 0;
+                        var motion = mean + residual * Mathf.Lerp(.015f, .060f, contact);
+                        motion += normals[i] * (Vector3.Dot(residual, normals[i]) * contact * .14f);
+                        // A straight run can span empty space. Its two ends constrain bending
+                        // even when its midpoint projects onto a different part of the body.
+                        var span = spans[i];
+                        if (span.Strength > 0)
+                        {
+                            var alongSpan = Vector3.Lerp(read[span.A], read[span.B], span.T);
+                            motion = Vector3.Lerp(motion, alongSpan, span.Strength * Mathf.Lerp(.65f, .10f, contact));
+                        }
+                        write[i] = Vector3.Lerp(target[i], motion, proximity[i]);
+                        chunkChange = Mathf.Max(chunkChange, (write[i] - read[i]).sqrMagnitude);
                     }
-                    next[i] = Vector3.Lerp(target[i], motion, proximity[i]);
-                    largestChange = Mathf.Max(largestChange, (next[i] - current[i]).sqrMagnitude);
-                }
+                    lock (write) largestChange = Mathf.Max(largestChange, chunkChange);
+                });
                 (next, current) = (current, next);
                 if (largestChange < scale * scale * 1e-8f)
                     break;
@@ -782,15 +808,20 @@ namespace ShapeForge
             // corrections on glossy surfaces without averaging the sculpted vertices.
             for (int pass = 0; pass < 6; pass++)
             {
-                for (int i = 0; i < current.Length; i++)
+                var read = current;
+                var write = next;
+                ForRange(read.Length, (start, end) =>
                 {
-                    if (neighbors[i] == null || proximity[i] <= 0)
-                        continue;
-                    var mean = Vector3.zero;
-                    foreach (var edge in neighbors[i])
-                        mean += current[edge.Index] * edge.Weight;
-                    next[i] = Vector3.Lerp(current[i], mean / totals[i], .55f);
-                }
+                    for (int i = start; i < end; i++)
+                    {
+                        if (neighbors[i] == null || proximity[i] <= 0)
+                            continue;
+                        var mean = Vector3.zero;
+                        foreach (var edge in neighbors[i])
+                            mean += read[edge.Index] * edge.Weight;
+                        write[i] = Vector3.Lerp(read[i], mean / totals[i], .55f);
+                    }
+                });
                 (current, next) = (next, current);
             }
             // A poorly supported bridge may stretch despite smooth displacement. Keep its anchored side fixed.
@@ -826,43 +857,51 @@ namespace ShapeForge
             Array.Clear(collision, 0, collision.Length);
             Array.Clear(correction, 0, correction.Length);
             float worst = 0;
-            for (int i = 0; i < current.Length; i++)
+            ForRange(current.Length, (start, end) =>
             {
-                if (weld[i] != i || confidence[i] <= 0 || current[i].sqrMagnitude == 0)
-                    continue;
-                var point = toBody.MultiplyPoint3x4(positions[i]) + current[i];
-                if (!smallBody.FindClosest(point, scale, out var face, out _, out var offset))
-                    continue;
-                var normal = smallBody.Normal(face);
-                float agreement = Vector3.Dot(normals[i], normal);
-                if (agreement <= .6f)
-                    continue;
-                float gap = Vector3.Dot(offset, normal);
-                float error = restGap[i] - gap;
-                // Preserve pre-existing gaps and penetration. Allow more outward travel
-                // for collisions than inward travel for floating fabric.
-                float amount = Mathf.Clamp(error, -scale * .10f, scale * .35f);
-                worst = Mathf.Max(worst, Mathf.Abs(amount) * confidence[i]);
-                if (gap < 0 && restGap[i] >= 0 && confidence[i] > .35f)
-                    collision[i] = normal * Mathf.Clamp(error, 0, scale * .18f);
-                correction[i] = normal * (amount * confidence[i] * (1f - spans[i].Strength) * Mathf.InverseLerp(.6f, .9f, agreement));
-            }
-            // Average the correction over cloth edges to avoid a crease at a face switch.
-            for (int i = 0; i < current.Length; i++)
-            {
-                if (neighbors[i] == null || proximity[i] <= 0)
-                    continue;
-                var mean = Vector3.zero;
-                foreach (var edge in neighbors[i])
-                    mean += correction[edge.Index] * edge.Weight;
-                var shift = Vector3.Lerp(correction[i], mean / totals[i], .65f);
-                if (collision[i].sqrMagnitude > 0)
+                float chunkWorst = 0;
+                for (int i = start; i < end; i++)
                 {
-                    var outward = collision[i].normalized;
-                    shift += outward * Mathf.Max(0, Vector3.Dot(collision[i] - shift, outward));
+                    if (weld[i] != i || confidence[i] <= 0 || current[i].sqrMagnitude == 0)
+                        continue;
+                    var point = toBody.MultiplyPoint3x4(positions[i]) + current[i];
+                    if (!smallBody.FindClosest(point, scale, out var face, out _, out var offset))
+                        continue;
+                    var normal = smallBody.Normal(face);
+                    float agreement = Vector3.Dot(normals[i], normal);
+                    if (agreement <= .6f)
+                        continue;
+                    float gap = Vector3.Dot(offset, normal);
+                    float error = restGap[i] - gap;
+                    // Preserve pre-existing gaps and penetration. Allow more outward travel
+                    // for collisions than inward travel for floating fabric.
+                    float amount = Mathf.Clamp(error, -scale * .10f, scale * .35f);
+                    chunkWorst = Mathf.Max(chunkWorst, Mathf.Abs(amount) * confidence[i]);
+                    if (gap < 0 && restGap[i] >= 0 && confidence[i] > .35f)
+                        collision[i] = normal * Mathf.Clamp(error, 0, scale * .18f);
+                    correction[i] = normal * (amount * confidence[i] * (1f - spans[i].Strength) * Mathf.InverseLerp(.6f, .9f, agreement));
                 }
-                current[i] += shift;
-            }
+                lock (collision) worst = Mathf.Max(worst, chunkWorst);
+            });
+            // Average the correction over cloth edges to avoid a crease at a face switch.
+            ForRange(current.Length, (start, end) =>
+            {
+                for (int i = start; i < end; i++)
+                {
+                    if (neighbors[i] == null || proximity[i] <= 0)
+                        continue;
+                    var mean = Vector3.zero;
+                    foreach (var edge in neighbors[i])
+                        mean += correction[edge.Index] * edge.Weight;
+                    var shift = Vector3.Lerp(correction[i], mean / totals[i], .65f);
+                    if (collision[i].sqrMagnitude > 0)
+                    {
+                        var outward = collision[i].normalized;
+                        shift += outward * Mathf.Max(0, Vector3.Dot(collision[i] - shift, outward));
+                    }
+                    current[i] += shift;
+                }
+            });
             if (worst < scale * 1e-3f)
                 break;
             }
@@ -1113,27 +1152,36 @@ namespace ShapeForge
 
             private int Build(int start, int count)
             {
-                var bounds = new Bounds(positions[triangles[start].A], Vector3.zero);
-                var centroidBounds = new Bounds(centers[start], Vector3.zero);
-                for (int i = start; i < start + count; i++)
-                {
-                    var face = triangles[i];
-                    bounds.Encapsulate(positions[face.A]);
-                    bounds.Encapsulate(positions[face.B]);
-                    bounds.Encapsulate(positions[face.C]);
-                    centroidBounds.Encapsulate(centers[i]);
-                }
-
                 int index = nodes.Count;
                 nodes.Add(default);
-                var node = new Node { Bounds = bounds, Start = start, Count = count };
-                if (count > 12)
+                var node = new Node { Start = start, Count = count };
+                if (count <= 12)
                 {
-                    var size = centroidBounds.size;
+                    var bounds = new Bounds(positions[triangles[start].A], Vector3.zero);
+                    for (int i = start; i < start + count; i++)
+                    {
+                        var face = triangles[i];
+                        bounds.Encapsulate(positions[face.A]);
+                        bounds.Encapsulate(positions[face.B]);
+                        bounds.Encapsulate(positions[face.C]);
+                    }
+                    node.Bounds = bounds;
+                }
+                else
+                {
+                    // Only centroids are scanned per level. Node bounds are the union of their children.
+                    var low = centers[start];
+                    var high = low;
+                    for (int i = start + 1; i < start + count; i++)
+                    {
+                        low = Vector3.Min(low, centers[i]);
+                        high = Vector3.Max(high, centers[i]);
+                    }
+                    var size = high - low;
                     int axis = size.x >= size.y && size.x >= size.z ? 0 : size.y >= size.z ? 1 : 2;
                     // Partition once per level. Sorting each complete subtree dominated
                     // generation time even for small accessories.
-                    float middle = centroidBounds.center[axis];
+                    float middle = (low[axis] + high[axis]) * .5f;
                     int split = start;
                     for (int i = start; i < start + count; i++)
                     {
@@ -1148,6 +1196,8 @@ namespace ShapeForge
                     node.Count = 0;
                     node.Left = Build(start, split - start);
                     node.Right = Build(split, start + count - split);
+                    node.Bounds = nodes[node.Left].Bounds;
+                    node.Bounds.Encapsulate(nodes[node.Right].Bounds);
                 }
                 nodes[index] = node;
                 return index;
