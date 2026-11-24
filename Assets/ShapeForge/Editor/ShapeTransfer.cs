@@ -107,6 +107,8 @@ namespace MilltinaBreastGenerator
         {
             internal readonly string ShapeName;
             internal readonly Vector3[] Positions, Deltas;
+            // Smooth area-weighted vertex normals before and after the source motion.
+            internal readonly Vector3[] RestNormals, FittedNormals;
             internal readonly float Peak, Radius;
             internal readonly Bounds QueryRegion;
             internal readonly TriangleSurface OriginalSurface;
@@ -132,9 +134,16 @@ namespace MilltinaBreastGenerator
                 if (Peak <= 1e-6f)
                     return;
 
-                Radius = Peak * 1.5f;
                 var queryRegion = MovingRegion(mesh, Positions, Deltas);
+                // Reach follows the size of the moving region as well as the shape's peak, so a subtle shape
+                // still carries loose fabric that stands off the body.
+                Radius = Mathf.Max(Peak * 1.5f, queryRegion.size.magnitude * .1f);
                 queryRegion.Expand(Radius * 2);
+                RestNormals = VertexNormals(mesh, Positions);
+                var deformed = new Vector3[Positions.Length];
+                for (int i = 0; i < deformed.Length; i++)
+                    deformed[i] = Positions[i] + Deltas[i];
+                FittedNormals = VertexNormals(mesh, deformed);
                 QueryRegion = queryRegion;
                 // Keep stationary faces that can win a nearest-face query in this region.
                 var indexRegion = queryRegion;
@@ -158,6 +167,35 @@ namespace MilltinaBreastGenerator
                     return fittedSurface;
                 }
             }
+        }
+
+        // Positions are shared by split vertices, so UV and hard-edge duplicates still agree on one normal.
+        private static Vector3[] VertexNormals(Mesh mesh, Vector3[] points)
+        {
+            var sums = new Dictionary<Vector3, Vector3>();
+            for (int part = 0; part < mesh.subMeshCount; part++)
+            {
+                if (mesh.GetTopology(part) != MeshTopology.Triangles) continue;
+                var indices = mesh.GetTriangles(part);
+                for (int i = 0; i < indices.Length; i += 3)
+                {
+                    int a = indices[i], b = indices[i + 1], c = indices[i + 2];
+                    var area = Vector3.Cross(points[b] - points[a], points[c] - points[a]);
+                    Accumulate(a);
+                    Accumulate(b);
+                    Accumulate(c);
+
+                    void Accumulate(int v)
+                    {
+                        sums.TryGetValue(points[v], out var sum);
+                        sums[points[v]] = sum + area;
+                    }
+                }
+            }
+            var normals = new Vector3[points.Length];
+            for (int i = 0; i < normals.Length; i++)
+                if (sums.TryGetValue(points[i], out var sum)) normals[i] = sum;
+            return normals;
         }
 
         internal static Mesh Generate(Mesh body, Mesh outfit, Matrix4x4 outfitToBody, out string warning, string shape = Shape)
@@ -244,6 +282,16 @@ namespace MilltinaBreastGenerator
                 var ac = source[triangle.C] - source[triangle.A];
                 var oldNormal = Vector3.Cross(ab, ac).normalized;
                 var newNormal = Vector3.Cross(ab + db - da, ac + dc - da).normalized;
+                // Carry the offset with smooth normals so it does not jump where the matched face changes.
+                var smoothOld = (body.RestNormals[triangle.A] * barycentric.x + body.RestNormals[triangle.B] * barycentric.y +
+                    body.RestNormals[triangle.C] * barycentric.z).normalized;
+                var smoothNew = (body.FittedNormals[triangle.A] * barycentric.x + body.FittedNormals[triangle.B] * barycentric.y +
+                    body.FittedNormals[triangle.C] * barycentric.z).normalized;
+                if (smoothOld == Vector3.zero || smoothNew == Vector3.zero || Vector3.Dot(smoothOld, oldNormal) < .5f)
+                {
+                    smoothOld = oldNormal;
+                    smoothNew = newNormal;
+                }
 
                 // Rotate the normal separation with the body. Keep the tangential residual at edges
                 // and fade the offset correction where the source deformation ends.
@@ -251,9 +299,9 @@ namespace MilltinaBreastGenerator
                 restGap[i] = Vector3.Dot(offset, oldNormal);
                 if (normalAgreement > 0.25f && distance > 0)
                 {
-                    float height = Vector3.Dot(offset, oldNormal);
+                    float height = Vector3.Dot(offset, smoothOld);
                     float activity = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(0, largestDelta * 0.12f, magnitude));
-                    var correction = (newNormal - oldNormal) * height * activity;
+                    var correction = (smoothNew - smoothOld) * height * activity;
                     displacement += Vector3.ClampMagnitude(correction, magnitude * 0.28f);
                 }
 
@@ -768,8 +816,16 @@ namespace MilltinaBreastGenerator
             (current, next) = (next, current);
             // Check the actual shrunken surface after the connected solve. Its nearest
             // face can differ from the original match, especially beneath a fold.
+            // Smoothing flattens crowns, so re-project several times. Each pass measures the remaining
+            // gap error from the updated positions and shrinks it.
+            var inverse = toBody.inverse;
             var collision = new Vector3[current.Length];
             var correction = new Vector3[current.Length];
+            for (int iteration = 0; iteration < 8; iteration++)
+            {
+            Array.Clear(collision, 0, collision.Length);
+            Array.Clear(correction, 0, correction.Length);
+            float worst = 0;
             for (int i = 0; i < current.Length; i++)
             {
                 if (weld[i] != i || confidence[i] <= 0 || current[i].sqrMagnitude == 0)
@@ -786,12 +842,12 @@ namespace MilltinaBreastGenerator
                 // Preserve pre-existing gaps and penetration. Allow more outward travel
                 // for collisions than inward travel for floating fabric.
                 float amount = Mathf.Clamp(error, -scale * .10f, scale * .35f);
+                worst = Mathf.Max(worst, Mathf.Abs(amount) * confidence[i]);
                 if (gap < 0 && restGap[i] >= 0 && confidence[i] > .35f)
                     collision[i] = normal * Mathf.Clamp(error, 0, scale * .18f);
                 correction[i] = normal * (amount * confidence[i] * (1f - spans[i].Strength) * Mathf.InverseLerp(.6f, .9f, agreement));
             }
             // Average the correction over cloth edges to avoid a crease at a face switch.
-            var inverse = toBody.inverse;
             for (int i = 0; i < current.Length; i++)
             {
                 if (neighbors[i] == null || proximity[i] <= 0)
@@ -806,6 +862,9 @@ namespace MilltinaBreastGenerator
                     shift += outward * Mathf.Max(0, Vector3.Dot(collision[i] - shift, outward));
                 }
                 current[i] += shift;
+            }
+            if (worst < scale * 1e-3f)
+                break;
             }
             for (int i = 0; i < deltas.Length; i++)
                 deltas[i] = inverse.MultiplyVector(current[weld[i]]);
