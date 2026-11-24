@@ -59,7 +59,7 @@ namespace MilltinaBreastGenerator
         private Tool tool;
         private Brush sculptBrush;
         private Tool cleanupTool = Tool.Relax;
-        private bool clippingBrush;
+        private bool clippingBrush = true;
         private Brush brushMode;
         private float brushStrength = .5f;
         private float brushGapMm = .5f;
@@ -832,10 +832,10 @@ namespace MilltinaBreastGenerator
         {
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (OverlayButton(new GUIContent("Scan & Fix", "Find and preview fixes for clipping patches."), !clippingBrush) && clippingBrush)
-                    SetClippingMode(false);
                 if (OverlayButton(new GUIContent("Clipping Brush", "Manually lift fabric clear of its reference surface."), clippingBrush) && !clippingBrush)
                     SetClippingMode(true);
+                if (OverlayButton(new GUIContent("Check Clipping", "Find clipping patches without editing the cloth."), !clippingBrush) && clippingBrush)
+                    SetClippingMode(false);
             }
             if (clippingBrush) return;
             using (new EditorGUILayout.HorizontalScope())
