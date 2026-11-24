@@ -43,7 +43,7 @@ namespace ShapeForge
             return protectedMotion;
         }
 
-        internal LayerFit(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape = ShapeTransfer.Shape, TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral)
+        internal LayerFit(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape, TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral)
         {
             this.shape = shape;
             Reverse = mode == BodyReference.OtherActiveShapesAndTargetAt100;

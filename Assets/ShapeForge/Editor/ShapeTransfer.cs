@@ -8,14 +8,13 @@ namespace ShapeForge
 
     internal static class ShapeTransfer
     {
-        internal const string Shape = "(No bra)Breasts_Small";
         internal static List<(string Name, bool Hidden)> DiscoverShapes(Mesh mesh)
         {
             var options = new List<(string Name, bool Hidden)>();
             if (!mesh || mesh.blendShapeCount == 0)
                 return options;
             var vertices = mesh.vertices;
-            var triangles = new List<(int A, int B, int C, float CollapseThreshold)>();
+            var triangles = new List<(int A, int B, int C, float RestArea)>();
             for (int part = 0; part < mesh.subMeshCount; part++)
             {
                 if (mesh.GetTopology(part) != MeshTopology.Triangles)
@@ -24,13 +23,11 @@ namespace ShapeForge
                 for (int i = 0; i < indices.Length; i += 3)
                 {
                     int a = indices[i], b = indices[i + 1], c = indices[i + 2];
-                    float area = Vector3.Cross(vertices[b] - vertices[a], vertices[c] - vertices[a]).sqrMagnitude;
-                    if (area > 1e-22f)
-                        triangles.Add((a, b, c, area * .01f));
+                    float area = Vector3.Cross(vertices[b] - vertices[a], vertices[c] - vertices[a]).magnitude;
+                    if (area > 1e-11f)
+                        triangles.Add((a, b, c, area));
                 }
             }
-            bool shrinkMasks = mesh.GetBlendShapeIndex(Shape) >= 0 &&
-                mesh.GetBlendShapeIndex("Shrink_Clothes_on") >= 0;
             var points = new Vector3[vertices.Length];
             var moves = new bool[vertices.Length];
             var upper = new Vector3[vertices.Length];
@@ -64,27 +61,34 @@ namespace ShapeForge
                 bool namedMask = normalized.StartsWith("hide_", StringComparison.Ordinal) ||
                     normalized.StartsWith("mask_", StringComparison.Ordinal) ||
                     normalized.Contains("body_hide") || normalized.Contains("body_mask") ||
-                    normalized.Contains("shrink_clothes") ||
-                    (shrinkMasks && normalized.StartsWith("shrink_", StringComparison.Ordinal));
+                    normalized.Contains("shrink_clothes");
                 options.Add((name, namedMask || collapsed));
             }
             return options;
         }
 
+        // A body mask hides skin under clothing by collapsing or strongly shrinking its faces. A fit sculpt moves and
+        // reshapes the surface but keeps most of its area, so its median face keeps well over a quarter of its area.
         private static bool HasCollapsedFaces(Vector3[] fitted, bool[] moves,
-            List<(int A, int B, int C, float CollapseThreshold)> triangles)
+            List<(int A, int B, int C, float RestArea)> triangles)
         {
-            int affected = 0, collapsed = 0;
-            foreach (var (a, b, c, threshold) in triangles)
+            int collapsed = 0;
+            var ratios = new List<float>();
+            foreach (var (a, b, c, rest) in triangles)
             {
                 if (!moves[a] || !moves[b] || !moves[c])
                     continue;
-                affected++;
-                float fittedArea = Vector3.Cross(fitted[b] - fitted[a], fitted[c] - fitted[a]).sqrMagnitude;
-                if (fittedArea <= threshold)
+                float ratio = Vector3.Cross(fitted[b] - fitted[a], fitted[c] - fitted[a]).magnitude / rest;
+                ratios.Add(ratio);
+                if (ratio <= .1f)
                     collapsed++;
             }
-            return collapsed > 0 && collapsed * 3 >= affected;
+            if (ratios.Count == 0)
+                return false;
+            if (collapsed > 0 && collapsed * 3 >= ratios.Count)
+                return true;
+            ratios.Sort();
+            return ratios[ratios.Count / 2] <= .25f;
         }
 
         internal static Vector3[] ReferencePositions(SkinnedMeshRenderer renderer, string target, BodyReference mode)
@@ -109,7 +113,8 @@ namespace ShapeForge
             internal readonly Vector3[] Positions, Deltas;
             // Smooth area-weighted vertex normals before and after the source motion.
             internal readonly Vector3[] RestNormals, FittedNormals;
-            internal readonly float Peak, Radius;
+            // Extent is the diagonal of the body region the shape moves.
+            internal readonly float Peak, Radius, Extent;
             internal readonly Bounds QueryRegion;
             internal readonly TriangleSurface OriginalSurface;
             private TriangleSurface fittedSurface;
@@ -137,7 +142,8 @@ namespace ShapeForge
                 var queryRegion = MovingRegion(mesh, Positions, Deltas);
                 // Reach follows the size of the moving region as well as the shape's peak, so a subtle shape
                 // still carries loose fabric that stands off the body.
-                Radius = Mathf.Max(Peak * 1.5f, queryRegion.size.magnitude * .1f);
+                Extent = queryRegion.size.magnitude;
+                Radius = Mathf.Max(Peak * 1.5f, Extent * .1f);
                 queryRegion.Expand(Radius * 2);
                 RestNormals = VertexNormals(mesh, Positions);
                 var deformed = new Vector3[Positions.Length];
@@ -212,7 +218,7 @@ namespace ShapeForge
             return normals;
         }
 
-        internal static Mesh Generate(Mesh body, Mesh outfit, Matrix4x4 outfitToBody, out string warning, string shape = Shape)
+        internal static Mesh Generate(Mesh body, Mesh outfit, Matrix4x4 outfitToBody, out string warning, string shape)
         {
             var vertices = outfit.vertices;
             var weights = FrameWeights(body, shape);
@@ -309,24 +315,19 @@ namespace ShapeForge
                     smoothNew = newNormal;
                 }
 
-                // Rotate the normal separation with the body. Keep the tangential residual at edges
-                // and fade the offset correction where the source deformation ends.
+                // Carry the whole offset rigidly with the rotation of the smooth body normal, so the garment keeps its
+                // gap and its sideways position on a turning surface. The rotation vanishes where the body stops moving.
                 float normalAgreement = Vector3.Dot(oldNormal, newNormal);
                 restGap[i] = Vector3.Dot(offset, oldNormal);
                 if (normalAgreement > 0.25f && distance > 0)
-                {
-                    float height = Vector3.Dot(offset, smoothOld);
-                    float activity = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(0, largestDelta * 0.12f, magnitude));
-                    var correction = (smoothNew - smoothOld) * height * activity;
-                    displacement += Vector3.ClampMagnitude(correction, magnitude * 0.28f);
-                }
+                    displacement += Quaternion.FromToRotation(smoothOld, smoothNew) * offset - offset;
 
-                // Trust a contact plane when the offset is near-normal and the two faces agree.
+                // Trust a contact plane when the offset is near-normal. A surface that turns over is a fold.
                 normals[i] = newNormal;
                 float alignment = distance > largestDelta * 0.005f
                     ? Mathf.Abs(Vector3.Dot(offset, oldNormal)) / distance : 1f;
                 confidence[i] = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(.6f, .95f, alignment))
-                    * Mathf.SmoothStep(0, 1, Mathf.InverseLerp(.35f, .85f, normalAgreement))
+                    * Mathf.SmoothStep(0, 1, Mathf.InverseLerp(-.2f, .3f, normalAgreement))
                     * (1 - Mathf.SmoothStep(0, 1, Mathf.InverseLerp(radius * .22f, radius * .7f, distance)));
                 if (magnitude < largestDelta * 0.001f)
                     continue;
@@ -343,7 +344,7 @@ namespace ShapeForge
 
             FitConnected(outfit, partners, vertices, deltas, proximity, normals, confidence, outfitToBody, largestDelta,
                 restGap, body.FittedSurface);
-            int compactDetails = PreserveCompactDetails(vertices, deltas, islands, closed, outfitToBody, largestDelta);
+            int compactDetails = PreserveCompactDetails(vertices, deltas, islands, closed, outfitToBody, body.Extent);
             warning = faded > 0
                 ? $"Reduced transfer on {faded} distant vertices. Check thick or loose areas at 50 and 100."
                 : $"Transferred {changed} vertices. Check the fit at 50 and 100.";
@@ -485,7 +486,7 @@ namespace ShapeForge
             return weights;
         }
 
-        internal static Mesh BuildMesh(Mesh outfit, Vector3[] vertices, Vector3[] deltas, string shape = Shape)
+        internal static Mesh BuildMesh(Mesh outfit, Vector3[] vertices, Vector3[] deltas, string shape)
             => BuildMesh(outfit, vertices, new[] { (100f, deltas) }, shape);
 
         internal static Mesh BuildMesh(Mesh outfit, Vector3[] vertices, IEnumerable<(float Weight, Vector3[] Motion)> frames, string shape, bool calculateShading = true)
@@ -644,8 +645,11 @@ namespace ShapeForge
             }
         }
 
+        // Small closed parts such as rings, studs and buttons keep their shape. Each takes the rigid motion, rotation
+        // included, that best matches its transferred motion. A part that this would bend by more than a few percent
+        // of its size, or that is large next to the moving body region, keeps its flexible fit.
         private static int PreserveCompactDetails(Vector3[] vertices, Vector3[] deltas, int[] islands, bool[] closed,
-            Matrix4x4 outfitToBody, float scale)
+            Matrix4x4 outfitToBody, float regionSize)
         {
             var sections = new Dictionary<int, List<int>>();
             for (int i = 0; i < islands.Length; i++)
@@ -655,42 +659,85 @@ namespace ShapeForge
                 section.Add(i);
             }
 
+            var bodyToOutfit = outfitToBody.inverse;
             int adjusted = 0;
             foreach (var section in sections.Values)
             {
                 if (section.Count < 8 || section.Count == vertices.Length || !closed[islands[section[0]]])
                     continue;
 
-                var bounds = new Bounds(outfitToBody.MultiplyPoint3x4(vertices[section[0]]), Vector3.zero);
-                var translation = Vector3.zero;
+                // Fit in body space so a scaled outfit transform still yields a rigid result in the world.
+                var rest = new List<Vector3>();
+                var moved = new List<Vector3>();
                 var unique = new HashSet<Vector3>();
+                var bounds = new Bounds(outfitToBody.MultiplyPoint3x4(vertices[section[0]]), Vector3.zero);
                 foreach (int i in section)
                 {
                     if (!unique.Add(vertices[i]))
                         continue;
-                    bounds.Encapsulate(outfitToBody.MultiplyPoint3x4(vertices[i]));
-                    translation += deltas[i];
+                    var point = outfitToBody.MultiplyPoint3x4(vertices[i]);
+                    rest.Add(point);
+                    moved.Add(point + outfitToBody.MultiplyVector(deltas[i]));
+                    bounds.Encapsulate(point);
                 }
-
-                // Compact disconnected rings, studs, and fasteners can move together.
-                // Broad panels and long narrow straps keep their flexible fit.
-                if (bounds.size.magnitude > scale * 0.76f ||
-                    Mathf.Min(bounds.size.x, Mathf.Min(bounds.size.y, bounds.size.z)) < scale * 0.018f ||
-                    unique.Count < 8)
+                float size = bounds.size.magnitude;
+                if (rest.Count < 8 || size <= 0 || size > regionSize * .25f)
                     continue;
 
-                translation /= unique.Count;
-                float variance = 0;
-                foreach (int i in section)
-                    variance = Mathf.Max(variance, (deltas[i] - translation).sqrMagnitude);
-                if (variance <= 1e-12f)
+                var restCenter = Vector3.zero;
+                var movedCenter = Vector3.zero;
+                for (int k = 0; k < rest.Count; k++)
+                {
+                    restCenter += rest[k];
+                    movedCenter += moved[k];
+                }
+                restCenter /= rest.Count;
+                movedCenter /= rest.Count;
+                // Columns of the cross-covariance between the rest and moved shapes.
+                Vector3 x = Vector3.zero, y = Vector3.zero, z = Vector3.zero;
+                for (int k = 0; k < rest.Count; k++)
+                {
+                    var p = rest[k] - restCenter;
+                    var q = moved[k] - movedCenter;
+                    x += q * p.x;
+                    y += q * p.y;
+                    z += q * p.z;
+                }
+                var rotation = ExtractRotation(x, y, z);
+
+                float deviation = 0;
+                for (int k = 0; k < rest.Count; k++)
+                    deviation = Mathf.Max(deviation, (rotation * (rest[k] - restCenter) + movedCenter - moved[k]).magnitude);
+                if (deviation <= size * 1e-4f || deviation > size * .15f)
                     continue;
 
                 foreach (int i in section)
-                    deltas[i] = translation;
+                {
+                    var point = outfitToBody.MultiplyPoint3x4(vertices[i]);
+                    deltas[i] = bodyToOutfit.MultiplyVector(rotation * (point - restCenter) + movedCenter - point);
+                }
                 adjusted++;
             }
             return adjusted;
+        }
+
+        // The rotation closest to a 3x3 matrix given by its columns (Müller et al., "A Robust Method to Extract the
+        // Rotational Part of Deformations", 2016). Converges in a few iterations and never reflects.
+        private static Quaternion ExtractRotation(Vector3 x, Vector3 y, Vector3 z)
+        {
+            var rotation = Quaternion.identity;
+            for (int iteration = 0; iteration < 32; iteration++)
+            {
+                Vector3 rx = rotation * Vector3.right, ry = rotation * Vector3.up, rz = rotation * Vector3.forward;
+                var omega = (Vector3.Cross(rx, x) + Vector3.Cross(ry, y) + Vector3.Cross(rz, z)) /
+                    (Mathf.Abs(Vector3.Dot(rx, x) + Vector3.Dot(ry, y) + Vector3.Dot(rz, z)) + 1e-9f);
+                float angle = omega.magnitude;
+                if (angle < 1e-7f)
+                    break;
+                rotation = Quaternion.AngleAxis(angle * Mathf.Rad2Deg, omega / angle) * rotation;
+                rotation.Normalize();
+            }
+            return rotation;
         }
 
 
@@ -752,7 +799,7 @@ namespace ShapeForge
             };
         }
 
-        internal static Vector3[] ReadSourceDeltas(Mesh body, string shapeName = Shape, float weight = 100)
+        internal static Vector3[] ReadSourceDeltas(Mesh body, string shapeName, float weight = 100)
         {
             int shape = body.GetBlendShapeIndex(shapeName);
             if (shape < 0)
@@ -803,6 +850,22 @@ namespace ShapeForge
             var neighbors = new List<(int Index, float Weight, Vector3 Direction)>[positions.Length];
             var totals = new float[positions.Length];
             var edges = new HashSet<(int, int)>();
+            // Inverse-length weights, floored at a fraction of this garment's typical edge so near-duplicate vertices
+            // cannot dominate their neighbors.
+            float edgeSum = 0;
+            int edgeCount = 0;
+            for (int section = 0; section < mesh.subMeshCount; section++)
+            {
+                if (mesh.GetTopology(section) != MeshTopology.Triangles)
+                    continue;
+                var indices = mesh.GetTriangles(section);
+                for (int k = 0; k < indices.Length; k++)
+                {
+                    edgeSum += toBody.MultiplyVector(positions[indices[k]] - positions[indices[k - k % 3 + (k + 1) % 3]]).magnitude;
+                    edgeCount++;
+                }
+            }
+            float shortest = edgeCount > 0 ? edgeSum / edgeCount * .25f : 0;
 
             for (int section = 0; section < mesh.subMeshCount; section++)
             {
@@ -819,11 +882,10 @@ namespace ShapeForge
             }
 
             var target = Array.ConvertAll(deltas, toBody.MultiplyVector);
-            var spans = FindStraightSpans(Array.ConvertAll(positions, toBody.MultiplyVector), neighbors, proximity, scale);
+            var spans = FindStraightSpans(Array.ConvertAll(positions, toBody.MultiplyVector), neighbors, proximity, scale, confidence);
             var current = (Vector3[])target.Clone();
             var next = (Vector3[])target.Clone();
             // Relax displacement rather than positions to retain the rest shape of folds.
-            // Contacts constrain clearance more strongly than tangential slip.
             for (int pass = 0; pass < 32; pass++)
             {
                 float largestChange = 0;
@@ -842,15 +904,15 @@ namespace ShapeForge
                         mean /= totals[i];
                         var residual = target[i] - mean;
                         float contact = target[i].sqrMagnitude > 0 ? confidence[i] : 0;
-                        var motion = mean + residual * Mathf.Lerp(.015f, .060f, contact);
-                        motion += normals[i] * (Vector3.Dot(residual, normals[i]) * contact * .14f);
+                        // A confident contact holds its transferred motion. Uncertain matches lean on their neighbors.
+                        var motion = mean + residual * Mathf.Lerp(.12f, 1f, contact);
                         // A straight run can span empty space. Its two ends constrain bending
                         // even when its midpoint projects onto a different part of the body.
                         var span = spans[i];
                         if (span.Strength > 0)
                         {
                             var alongSpan = Vector3.Lerp(read[span.A], read[span.B], span.T);
-                            motion = Vector3.Lerp(motion, alongSpan, span.Strength * Mathf.Lerp(.65f, .10f, contact));
+                            motion = Vector3.Lerp(motion, alongSpan, span.Strength * .65f);
                         }
                         write[i] = Vector3.Lerp(target[i], motion, proximity[i]);
                         chunkChange = Mathf.Max(chunkChange, (write[i] - read[i]).sqrMagnitude);
@@ -869,7 +931,7 @@ namespace ShapeForge
                 var span = spans[i];
                 if (span.Strength > 0)
                     next[i] = Vector3.Lerp(current[i], Vector3.Lerp(current[span.A], current[span.B], span.T),
-                        span.Strength * Mathf.Lerp(1f, .35f, confidence[i]));
+                        span.Strength);
             }
             (current, next) = (next, current);
 
@@ -888,7 +950,7 @@ namespace ShapeForge
                         var mean = Vector3.zero;
                         foreach (var edge in neighbors[i])
                             mean += read[edge.Index] * edge.Weight;
-                        write[i] = Vector3.Lerp(read[i], mean / totals[i], .55f);
+                        write[i] = Vector3.Lerp(read[i], mean / totals[i], .55f * (1 - confidence[i]));
                     }
                 });
                 (current, next) = (next, current);
@@ -985,7 +1047,7 @@ namespace ShapeForge
                 var direction = toBody.MultiplyVector(positions[b] - positions[a]);
                 float length = direction.magnitude;
                 direction = length > 0 ? direction / length : Vector3.zero;
-                float weight = 1f / Mathf.Max(length, scale * .06f);
+                float weight = 1f / Mathf.Max(length, shortest, 1e-9f);
                 (neighbors[a] ??= new List<(int, float, Vector3)>()).Add((b, weight, direction));
                 (neighbors[b] ??= new List<(int, float, Vector3)>()).Add((a, weight, -direction));
                 totals[a] += weight;
@@ -1002,13 +1064,15 @@ namespace ShapeForge
             return edge * (Mathf.Clamp(length, original * .75f, original * 1.25f) / length - 1f);
         }
 
+        // A straight run of garment edges that crosses empty space, such as a strap over a valley, should follow the
+        // chord between its ends. A vertex in confident body contact is supported where it is, so it gets no span.
         private static (int A, int B, float T, float Strength)[] FindStraightSpans(Vector3[] rest,
-            List<(int Index, float Weight, Vector3 Direction)>[] neighbors, float[] proximity, float scale)
+            List<(int Index, float Weight, Vector3 Direction)>[] neighbors, float[] proximity, float scale, float[] confidence)
         {
             var spans = new (int A, int B, float T, float Strength)[rest.Length];
             for (int i = 0; i < spans.Length; i++)
             {
-                if (neighbors[i] == null || proximity[i] <= 0)
+                if (neighbors[i] == null || proximity[i] <= 0 || confidence[i] >= 1)
                     continue;
                 float longest = scale * .65f;
                 foreach (var edge in neighbors[i])
@@ -1027,7 +1091,7 @@ namespace ShapeForge
                         continue;
                     longest = length;
                     float support = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(scale * .03f, scale * .28f, Mathf.Min(left, right)));
-                    spans[i] = (a, b, left / length, support);
+                    spans[i] = (a, b, left / length, support * (1 - confidence[i]));
                 }
             }
 

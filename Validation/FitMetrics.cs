@@ -58,9 +58,7 @@ public static class FitMetrics
         body ??= all.Where(r => r.sharedMesh).OrderByDescending(r => r.sharedMesh.blendShapeCount).FirstOrDefault();
         if (!body) return "ShapeForge fit metrics: no body renderer with blendshapes was found.";
         if (string.IsNullOrEmpty(shape))
-            shape = body.sharedMesh.GetBlendShapeIndex(ShapeTransfer.Shape) >= 0
-                ? ShapeTransfer.Shape
-                : ShapeTransfer.DiscoverShapes(body.sharedMesh).Where(s => !s.Hidden).Select(s => s.Name).FirstOrDefault();
+            shape = ShapeTransfer.DiscoverShapes(body.sharedMesh).Where(s => !s.Hidden).Select(s => s.Name).FirstOrDefault();
         if (string.IsNullOrEmpty(shape)) return "ShapeForge fit metrics: the body has no usable source shape.";
 
         var outfits = root.GetComponentsInChildren<SkinnedMeshRenderer>(false)

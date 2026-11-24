@@ -70,7 +70,7 @@ namespace ShapeForge
         internal static bool IsBodyName(string name) =>
             Array.Exists(BodyNames, body => string.Equals(body, name, StringComparison.OrdinalIgnoreCase));
 
-        internal static string Validate(SkinnedMeshRenderer outfit, SkinnedMeshRenderer body, Transform root, string shape = ShapeTransfer.Shape)
+        internal static string Validate(SkinnedMeshRenderer outfit, SkinnedMeshRenderer body, Transform root, string shape)
         {
             if (EditorApplication.isPlayingOrWillChangePlaymode)
                 return "Exit Play Mode before generating a mesh.";
@@ -113,7 +113,7 @@ namespace ShapeForge
             return null;
         }
 
-        internal static string Generate(SkinnedMeshRenderer outfit, SkinnedMeshRenderer body, Transform root, LayerFit fit = null, Vector3[] draft = null, string shape = ShapeTransfer.Shape)
+        internal static string Generate(SkinnedMeshRenderer outfit, SkinnedMeshRenderer body, Transform root, string shape, LayerFit fit = null, Vector3[] draft = null)
         {
             string error = Validate(outfit, body, root, shape);
             if (error != null)
@@ -191,7 +191,7 @@ namespace ShapeForge
             }
         }
 
-        internal static string Restore(SkinnedMeshRenderer outfit, GeneratedMeshInfo info, string shape = ShapeTransfer.Shape)
+        internal static string Restore(SkinnedMeshRenderer outfit, GeneratedMeshInfo info, string shape)
         {
             if (!outfit || GetInfo(outfit.sharedMesh) != info || !info || !info.original ||
                 EditorUtility.IsPersistent(outfit) || EditorApplication.isPlayingOrWillChangePlaymode)

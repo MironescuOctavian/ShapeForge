@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Much more accurate automatic fits. On the synthetic suite the gap error 95th percentile fell from 2.3 mm to 0.06 mm and the full 3D error against the ideal fit from 3.5 mm to 0.5 mm, with smoother fabric. Straight edge loops lying on the body are no longer flattened toward their ends (straps that bridge a gap still are). Garment offsets turn fully with the body surface. Confident contacts hold their transferred motion and only uncertain matches are smoothed.
+- Small closed parts such as buttons and rings now rotate with the body as well as move, and stay rigid. Which parts qualify depends on their size and how much they would bend, not on the shape's strength.
+- Removed avatar-specific defaults: there is no built-in source shape name, and body masks are detected by how strongly a shape collapses or shrinks faces rather than by one avatar's shape names.
+- FitQualityCheck adds a shrinking shape, a torso, cleavage, a strap bridge and a button case, and scores sideways drift against the ideal fit.
 - Improved fit accuracy: reach now follows the size of the moving region so loose fabric follows subtle shapes, the normal offset uses smooth normals, the final clearance pass repeats, seams weld within a small tolerance, and a vertex that sank into the front of a thin body part no longer follows the surface behind it.
 - Generation is about 2.7 times faster for a single piece and 3.5 times faster for layered fits on dense meshes (parallel solves, shared seam maps, cheaper search-tree build). Results are unchanged.
 - Renamed the code namespace to ShapeForge and detect the body by name or by the renderer with the most blendshapes.

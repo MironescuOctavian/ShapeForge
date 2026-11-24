@@ -51,7 +51,7 @@ namespace ShapeForge
         private Vector3 focus;
         private float size;
         private SkinnedMeshRenderer body;
-        private string targetShape = ShapeTransfer.Shape;
+        private string targetShape = "";
         private enum Brush { Grab, PushOut, Smooth, Multiply, ClearSkin, ElasticDeform, Protect, Unprotect, Restore, Relax }
         private static readonly Brush[] SculptBrushes = { Brush.Grab, Brush.ElasticDeform, Brush.PushOut, Brush.Smooth, Brush.Multiply };
         private static readonly string[] SculptBrushNames = { "Grab", "Elastic Deform", "Push Out", "Smooth Transfer", "Multiply" };
@@ -208,7 +208,7 @@ namespace ShapeForge
 
         internal FitPreview(GeneratorWindow host = null) => this.host = host;
 
-        internal void Start(SkinnedMeshRenderer body, SkinnedMeshRenderer[] outfits, string shape = ShapeTransfer.Shape,
+        internal void Start(SkinnedMeshRenderer body, SkinnedMeshRenderer[] outfits, string shape,
             TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral)
         {
             settingsScroll = Vector2.zero;

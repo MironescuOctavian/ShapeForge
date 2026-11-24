@@ -21,7 +21,7 @@ namespace ShapeForge
         private List<(string Name, bool Hidden)> bodyShapes = new();
         private GUIContent[] shapeOptions = Array.Empty<GUIContent>();
         private string[] shapeNames = Array.Empty<string>();
-        [SerializeField] private string sourceShapeName = ShapeTransfer.Shape;
+        [SerializeField] private string sourceShapeName = "";
         [SerializeField] private GameObject outfitRoot;
         [SerializeField] private int outfitInstanceId;
         [SerializeField] private SkinnedMeshRenderer manualBody;
