@@ -252,7 +252,8 @@ namespace ShapeForge
             var confidence = new float[vertices.Length];
             var proximity = new float[vertices.Length];
             var bodyToOutfit = outfitToBody.inverse;
-            var hints = NeighborMotionHints(outfit, vertices, outfitToBody, body, out var matches);
+            var partners = weld ?? SeamPartners(outfit, vertices);
+            var hints = NeighborMotionHints(outfit, vertices, outfitToBody, body, partners, out var matches);
             int changed = 0;
             int faded = 0;
             for (int i = 0; i < vertices.Length; i++)
@@ -338,7 +339,6 @@ namespace ShapeForge
             if (changed == 0 && !allowStationary)
                 throw new InvalidOperationException("No outfit vertices matched the deforming body surface. Check the outfit fit, rest pose, and scale.");
 
-            var partners = weld ?? SeamPartners(outfit, vertices);
             var islands = FindIslands(outfit, partners, out var closed);
 
             FitConnected(outfit, partners, vertices, deltas, proximity, normals, confidence, outfitToBody, largestDelta,
@@ -354,7 +354,64 @@ namespace ShapeForge
             return deltas;
         }
 
-        private static (Vector3 Sum, Vector3 Normal, float Squares, int Count)[] NeighborMotionHints(Mesh mesh, Vector3[] vertices, Matrix4x4 toBody, FitSource body,
+        // The nearest body face can belong to the far side of a thin body part, such as a garment sunk slightly
+        // into the front of the torso that is nearer the back. Cloth normal and body normal should agree, so a
+        // vertex whose matched face opposes it gets a second look that penalizes opposing faces.
+        private static void CorrectWrongSide(Mesh mesh, Vector3[] vertices, Matrix4x4 toBody, FitSource body, int[] weld,
+            (bool Matched, TriangleSurface.Triangle Face, Vector3 Weights, Vector3 Offset)[] nearest, Vector3[] faceNormals, Vector3[] motion)
+        {
+            var points = Array.ConvertAll(vertices, toBody.MultiplyPoint3x4);
+            var clothNormals = new Vector3[vertices.Length];
+            for (int part = 0; part < mesh.subMeshCount; part++)
+            {
+                if (mesh.GetTopology(part) != MeshTopology.Triangles) continue;
+                var indices = mesh.GetTriangles(part);
+                for (int k = 0; k < indices.Length; k += 3)
+                {
+                    int a = indices[k], b = indices[k + 1], c = indices[k + 2];
+                    var area = Vector3.Cross(points[b] - points[a], points[c] - points[a]);
+                    clothNormals[weld[a]] += area;
+                    clothNormals[weld[b]] += area;
+                    clothNormals[weld[c]] += area;
+                }
+            }
+            for (int i = 0; i < clothNormals.Length; i++)
+                clothNormals[i] = clothNormals[weld[i]].normalized;
+
+            // A vertex outside its matched face whose normal still opposes that face belongs to a mesh wound
+            // the other way, so all normals flip. A vertex inside its matched face is a wrong-side candidate.
+            int agree = 0, inverted = 0, inside = 0;
+            for (int i = 0; i < nearest.Length; i++)
+            {
+                if (!nearest[i].Matched || clothNormals[i] == Vector3.zero) continue;
+                float side = Vector3.Dot(clothNormals[i], faceNormals[i]);
+                bool outside = Vector3.Dot(nearest[i].Offset, faceNormals[i]) >= 0;
+                if (side > .3f && outside) agree++;
+                else if (side < -.3f && outside) inverted++;
+                else if (side < -.3f) inside++;
+            }
+            if (inside == 0) return;
+            float sign = inverted > agree ? -1f : 1f;
+
+            var region = body.QueryRegion;
+            ForRange(vertices.Length, (start, end) =>
+            {
+                for (int i = start; i < end; i++)
+                {
+                    if (!nearest[i].Matched || clothNormals[i] == Vector3.zero) continue;
+                    var expected = clothNormals[i] * sign;
+                    if (Vector3.Dot(expected, faceNormals[i]) >= -.2f || Vector3.Dot(nearest[i].Offset, faceNormals[i]) >= 0) continue;
+                    if (!body.OriginalSurface.FindClosest(points[i], body.Radius, out var face, out var weights, out var offset,
+                        expectedNormal: expected, sideBias: body.Radius * .15f))
+                        continue;
+                    nearest[i] = (true, face, weights, offset);
+                    faceNormals[i] = body.OriginalSurface.Normal(face);
+                    motion[i] = body.Deltas[face.A] * weights.x + body.Deltas[face.B] * weights.y + body.Deltas[face.C] * weights.z;
+                }
+            });
+        }
+
+        private static (Vector3 Sum, Vector3 Normal, float Squares, int Count)[] NeighborMotionHints(Mesh mesh, Vector3[] vertices, Matrix4x4 toBody, FitSource body, int[] weld,
             out (bool Matched, TriangleSurface.Triangle Face, Vector3 Weights, Vector3 Offset)[] matches)
         {
             matches = new (bool, TriangleSurface.Triangle, Vector3, Vector3)[vertices.Length];
@@ -374,6 +431,7 @@ namespace ShapeForge
                     motion[i] = body.Deltas[face.A] * weights.x + body.Deltas[face.B] * weights.y + body.Deltas[face.C] * weights.z;
                 }
             });
+            CorrectWrongSide(mesh, vertices, toBody, body, weld, nearest, faceNormals, motion);
             var edges = new HashSet<(int, int)>();
             for (int part = 0; part < mesh.subMeshCount; part++)
             {
@@ -487,7 +545,18 @@ namespace ShapeForge
         {
             var parent = new int[vertices.Length];
             for (int i = 0; i < parent.Length; i++) parent[i] = i;
-            var edges = new Dictionary<(Vector3, Vector3), (int A, int B, Vector3 Normal, int Count)>();
+            // Positions that agree within a tiny fraction of the mesh size count as one point, so importer
+            // rounding cannot split a seam. Quantised cells keep the lookup a plain dictionary.
+            var low = vertices.Length > 0 ? vertices[0] : Vector3.zero;
+            var high = low;
+            foreach (var vertex in vertices)
+            {
+                low = Vector3.Min(low, vertex);
+                high = Vector3.Max(high, vertex);
+            }
+            float cell = Mathf.Max((high - low).magnitude * 1e-5f, 1e-9f);
+            Vector3Int Snap(Vector3 v) => new Vector3Int(Mathf.RoundToInt(v.x / cell), Mathf.RoundToInt(v.y / cell), Mathf.RoundToInt(v.z / cell));
+            var edges = new Dictionary<(Vector3Int, Vector3Int), (int A, int B, Vector3 Normal, int Count)>();
             for (int part = 0; part < mesh.subMeshCount; part++)
             {
                 if (mesh.GetTopology(part) != MeshTopology.Triangles) continue;
@@ -519,7 +588,7 @@ namespace ShapeForge
             }
             void Count(int a, int b, Vector3 normal)
             {
-                var key = (vertices[a], vertices[b]);
+                var key = (Snap(vertices[a]), Snap(vertices[b]));
                 edges.TryGetValue(key, out var prior);
                 edges[key] = (a, b, normal, prior.Count + 1);
             }
@@ -1285,19 +1354,19 @@ namespace ShapeForge
             }
 
             internal bool FindClosest(Vector3 point, float radius, out Triangle triangle,
-                out Vector3 barycentric, out Vector3 offset, Vector3[] motion = null, Vector3 hint = default, Vector3 expectedNormal = default)
+                out Vector3 barycentric, out Vector3 offset, Vector3[] motion = null, Vector3 hint = default, Vector3 expectedNormal = default, float sideBias = 0)
             {
                 float best = radius * radius;
                 int face = -1;
                 barycentric = default;
                 offset = default;
-                Search(0, point, nodes[0].Bounds.SqrDistance(point), ref best, ref face, ref barycentric, ref offset, motion, hint, expectedNormal);
+                Search(0, point, nodes[0].Bounds.SqrDistance(point), ref best, ref face, ref barycentric, ref offset, motion, hint, expectedNormal, sideBias);
                 triangle = face >= 0 ? triangles[face] : default;
                 return face >= 0;
             }
 
             private void Search(int index, Vector3 point, float bound, ref float best,
-                ref int face, ref Vector3 barycentric, ref Vector3 offset, Vector3[] motion, Vector3 hint, Vector3 expectedNormal)
+                ref int face, ref Vector3 barycentric, ref Vector3 offset, Vector3[] motion, Vector3 hint, Vector3 expectedNormal, float sideBias)
             {
                 if (bound >= best)
                     return;
@@ -1313,8 +1382,8 @@ namespace ShapeForge
                         (first, second) = (second, first);
                         (firstBound, secondBound) = (secondBound, firstBound);
                     }
-                    Search(first, point, firstBound, ref best, ref face, ref barycentric, ref offset, motion, hint, expectedNormal);
-                    Search(second, point, secondBound, ref best, ref face, ref barycentric, ref offset, motion, hint, expectedNormal);
+                    Search(first, point, firstBound, ref best, ref face, ref barycentric, ref offset, motion, hint, expectedNormal, sideBias);
+                    Search(second, point, secondBound, ref best, ref face, ref barycentric, ref offset, motion, hint, expectedNormal, sideBias);
                     return;
                 }
 
@@ -1333,6 +1402,16 @@ namespace ShapeForge
                         float disagreement = (interpolated - hint).sqrMagnitude;
                         float orientation = Vector3.Dot(expectedNormal, Vector3.Cross(ab, ac).normalized);
                         distance += disagreement * (.25f + .125f * (1 - orientation));
+                    }
+                    if (sideBias > 0)
+                    {
+                        // A face turned away from the cloth is probably the far side of the body.
+                        float side = Vector3.Dot(expectedNormal, Vector3.Cross(ab, ac).normalized);
+                        if (side < 0)
+                        {
+                            float penalized = Mathf.Sqrt(distance) - sideBias * side;
+                            distance = penalized * penalized;
+                        }
                     }
                     if (!(distance < best))
                         continue;

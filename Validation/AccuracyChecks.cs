@@ -93,6 +93,16 @@ public static class AccuracyChecks
         var partners = ShapeTransfer.SeamPartners(seam, seam.vertices);
         Check(partners[1] == partners[4] && partners[2] == partners[3] && partners[0] != partners[6], "split seam versus touching panel");
 
+        // The same seam, but one duplicate carries float noise as left behind by an importer.
+        var noisy = new Mesh();
+        float noise = 3e-7f;
+        noisy.vertices = new[] { Vector3.zero, Vector3.right, Vector3.up, Vector3.up + Vector3.one * noise, Vector3.right - Vector3.one * noise, Vector3.one,
+            Vector3.zero, Vector3.left, Vector3.down };
+        noisy.triangles = new[] { 0,1,2, 3,4,5, 6,7,8 };
+        var noisyPartners = ShapeTransfer.SeamPartners(noisy, noisy.vertices);
+        Check(noisyPartners[1] == noisyPartners[4] && noisyPartners[2] == noisyPartners[3] && noisyPartners[0] != noisyPartners[6],
+            "seam duplicates with float noise still weld");
+
         var panel = cloth.sharedMesh;
         panel.uv = new[] { Vector2.zero, Vector2.right, Vector2.up };
         panel.tangents = Enumerable.Repeat(new Vector4(1,0,0,-1), 3).ToArray();

@@ -46,10 +46,48 @@ public static class FitQualityCheck
             if (p95 > c.MaxP95) failures.Add($"{c.Name}: p95 {p95 * 1000:F2} mm exceeds {c.MaxP95 * 1000:F2} mm");
             if (penetrations > c.MaxPenetrations) failures.Add($"{c.Name}: {penetrations} penetrations");
         }
+        float stray = WrongSide();
+        report.AppendLine($"wrong-side: garment on a stationary front sheet moved {stray * 1000:F2} mm because of a moving back sheet");
+        if (stray > .002f) failures.Add($"wrong-side: garment followed the moving surface behind it ({stray * 1000:F2} mm)");
         report.AppendLine(Benchmark());
         Debug.Log(report.ToString());
         if (failures.Count > 0) throw new Exception("Fit quality regressed:\n" + string.Join("\n", failures));
         Debug.Log("SHAPEFORGE FIT QUALITY PASSED");
+    }
+
+    // A closed-looking body: a stationary front sheet facing +Z and a back sheet 1 cm behind it that faces -Z and
+    // slides sideways. A garment sunk 6 mm into the front is nearer the back sheet but belongs to the front.
+    private static float WrongSide()
+    {
+        var front = Grid(.6f, 49, 0, 0);
+        var back = Grid(.6f, 49, -.01f, 0);
+        var backTriangles = back.triangles;
+        for (int i = 0; i < backTriangles.Length; i += 3) (backTriangles[i + 1], backTriangles[i + 2]) = (backTriangles[i + 2], backTriangles[i + 1]);
+        int count = front.vertexCount;
+        var body = new Mesh { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+        body.vertices = front.vertices.Concat(back.vertices).ToArray();
+        body.triangles = front.triangles.Concat(backTriangles.Select(t => t + count)).ToArray();
+        var slide = new Vector3[body.vertexCount];
+        for (int i = count; i < slide.Length; i++) slide[i] = Vector3.right * .03f;
+        body.AddBlendShapeFrame(Shape, 100, slide, null, null);
+        var cloth = Grid(.4f, 41, -.006f, .0021f);
+        Mesh result = null;
+        try
+        {
+            try { result = ShapeTransfer.Generate(body, cloth, Matrix4x4.identity, out _, Shape); }
+            catch (InvalidOperationException exception) when (exception.Message.Contains("No outfit vertices matched"))
+            {
+                // Everything attached to the stationary front sheet, so there is nothing to transfer.
+                return 0;
+            }
+            var motion = ShapeTransfer.ReadSourceDeltas(result, Shape);
+            return motion.Max(m => m.magnitude);
+        }
+        finally
+        {
+            foreach (var mesh in new[] { front, back, body, cloth, result })
+                if (mesh) UnityEngine.Object.DestroyImmediate(mesh);
+        }
     }
 
     // Times dense, two-frame generation. Reported only, because timings depend on the machine.
