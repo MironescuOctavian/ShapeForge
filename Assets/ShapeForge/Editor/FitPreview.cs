@@ -505,9 +505,12 @@ namespace MilltinaBreastGenerator
         private void DrawFitPanel()
         {
             using (new EditorGUILayout.HorizontalScope()) DrawSceneWeight();
-            using (new EditorGUI.DisabledScope(PreviewingPatch))
-                using (new EditorGUILayout.HorizontalScope()) DrawFramePicker();
-            if (!EditableFrame) EditorGUILayout.LabelField("Inspection only at this weight.", EditorStyles.miniLabel);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUI.DisabledScope(PreviewingPatch)) DrawFramePicker();
+                if (!EditableFrame)
+                    GUILayout.Label("Inspection only at this weight.", EditorStyles.wordWrappedMiniLabel, GUILayout.MinWidth(0));
+            }
             using (new EditorGUI.DisabledScope(PreviewingPatch))
                 DrawToolButton(Tool.Inspect, "Select Cloth", "Pick cloth in Scene View without applying an edit.");
 
