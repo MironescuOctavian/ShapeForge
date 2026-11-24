@@ -362,7 +362,11 @@ namespace MilltinaBreastGenerator
             }
 
             EditorGUILayout.Space(4);
-            float listHeight = Mathf.Clamp(position.height * .45f, 116, Mathf.Max(116, pieces.Length * 29 + 4));
+            var rowStyle = EditorStyles.helpBox;
+            int visibleRows = Mathf.Min(6, pieces.Length);
+            float rowSpacing = Mathf.Max(rowStyle.margin.top, rowStyle.margin.bottom);
+            float listHeight = visibleRows * (EditorGUIUtility.singleLineHeight + rowStyle.padding.vertical)
+                + (visibleRows - 1) * rowSpacing + rowStyle.margin.vertical;
             using (var scroll = new EditorGUILayout.ScrollViewScope(pieceScroll, GUILayout.Height(listHeight)))
             {
                 pieceScroll = scroll.scrollPosition;
@@ -370,7 +374,7 @@ namespace MilltinaBreastGenerator
                     DrawPiece(piece, sourceShape);
             }
 
-            EditorGUILayout.Space(6);
+            EditorGUILayout.Space(4);
             var selected = pieces.Where(p => p.CanGenerate && !uncheckedPieces.Contains(p.Renderer)).ToArray();
             var restorable = pieces.Where(p => p.CanRestore).ToArray();
             bool editing = editSession?.Active == true;
@@ -530,7 +534,7 @@ namespace MilltinaBreastGenerator
             bool hasResult = results.TryGetValue(piece.Renderer, out var result);
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
-                using (new EditorGUILayout.HorizontalScope())
+                using (new EditorGUILayout.HorizontalScope(GUILayout.Height(EditorGUIUtility.singleLineHeight)))
                 {
                     if (piece.HasShape)
                         GUILayout.Label("✓", checkmark, GUILayout.Width(18));
