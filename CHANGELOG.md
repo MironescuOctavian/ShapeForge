@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Improved fit accuracy: reach now follows the size of the moving region so loose fabric follows subtle shapes, the normal offset uses smooth normals, the final clearance pass repeats, seams weld within a small tolerance, and a vertex that sank into the front of a thin body part no longer follows the surface behind it.
+- Generation is about 2.7 times faster for a single piece and 3.5 times faster for layered fits on dense meshes (parallel solves, shared seam maps, cheaper search-tree build). Results are unchanged.
+- Renamed the code namespace to ShapeForge and detect the body by name or by the renderer with the most blendshapes.
+- Added Validation/FitQualityCheck.cs and Validation/FitMetrics.cs to measure gap preservation on synthetic bodies and on your own avatar (Tools > ShapeForge > Validation > Measure Fit Quality).
+
 - Redesigned docked Edit Settings with Unity’s native background, a visible outfit list, and actions directly beneath the work area. Clean sessions show End Edit.
 
 - Put Edit Settings inside the existing ShapeForge panel. Back and Resume Edit keep the draft active. The Scene View bar now carries only live fit controls and the active tool hint.

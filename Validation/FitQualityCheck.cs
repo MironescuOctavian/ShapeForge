@@ -46,6 +46,7 @@ public static class FitQualityCheck
             if (p95 > c.MaxP95) failures.Add($"{c.Name}: p95 {p95 * 1000:F2} mm exceeds {c.MaxP95 * 1000:F2} mm");
             if (penetrations > c.MaxPenetrations) failures.Add($"{c.Name}: {penetrations} penetrations");
         }
+        report.AppendLine(HarnessCrossCheck());
         float stray = WrongSide();
         report.AppendLine($"wrong-side: garment on a stationary front sheet moved {stray * 1000:F2} mm because of a moving back sheet");
         if (stray > .002f) failures.Add($"wrong-side: garment followed the moving surface behind it ({stray * 1000:F2} mm)");
@@ -53,6 +54,27 @@ public static class FitQualityCheck
         Debug.Log(report.ToString());
         if (failures.Count > 0) throw new Exception("Fit quality regressed:\n" + string.Join("\n", failures));
         Debug.Log("SHAPEFORGE FIT QUALITY PASSED");
+    }
+
+    // Runs the real-avatar harness on a synthetic bump so its numbers can be compared with the case table.
+    private static string HarnessCrossCheck()
+    {
+        var body = Grid(.6f, 49, 0, 0);
+        var lift = body.vertices.Select(v => Vector3.forward * (.03f * Mathf.Exp(-(v.x * v.x + v.y * v.y) / (2 * .05f * .05f)))).ToArray();
+        body.AddBlendShapeFrame(Shape, 100, lift, null, null);
+        var cloth = Grid(.5f, 61, .015f, .0031f);
+        var bodyRenderer = new GameObject("harness body").AddComponent<SkinnedMeshRenderer>();
+        var clothRenderer = new GameObject("harness cloth").AddComponent<SkinnedMeshRenderer>();
+        bodyRenderer.sharedMesh = body;
+        clothRenderer.sharedMesh = cloth;
+        try { return FitMetrics.Measure(bodyRenderer, new[] { clothRenderer }, Shape); }
+        finally
+        {
+            UnityEngine.Object.DestroyImmediate(bodyRenderer.gameObject);
+            UnityEngine.Object.DestroyImmediate(clothRenderer.gameObject);
+            UnityEngine.Object.DestroyImmediate(body);
+            UnityEngine.Object.DestroyImmediate(cloth);
+        }
     }
 
     // A closed-looking body: a stationary front sheet facing +Z and a back sheet 1 cm behind it that faces -Z and
