@@ -288,10 +288,28 @@ namespace MilltinaBreastGenerator
                         GUILayout.Label("Edit fit", EditorStyles.largeLabel);
                         GUILayout.Label($"{(body ? body.name : "Body")} / {targetShape}", EditorStyles.miniLabel);
                     }
-                    if (GUILayout.Button("‹ Generator", GUILayout.Width(105), GUILayout.Height(25)))
+                    if (OverlayButton(new GUIContent("Back", "Return to the Generator and keep the current draft."), false, GUILayout.Width(52)))
                     {
                         host.ShowGenerator();
                         GUIUtility.ExitGUI();
+                    }
+                    if (Active)
+                    {
+                        if (OverlayButton(new GUIContent(unsavedEdits ? "Discard" : "End Edit",
+                            unsavedEdits ? "End Edit Mode and discard unsaved corrections." : "End Edit Mode."),
+                            false, GUILayout.Width(68)))
+                        {
+                            if (!unsavedEdits || EditorUtility.DisplayDialog("Discard ShapeForge edits?",
+                                "Discard corrections from this session?", "Discard", "Keep editing"))
+                            {
+                                DiscardChanges();
+                                host.ShowGenerator();
+                            }
+                            GUIUtility.ExitGUI();
+                        }
+                        using (new EditorGUI.DisabledScope(!unsavedEdits || strokePiece != null || PreviewingPatch))
+                            if (ToolbarButton(new GUIContent("Save Corrections", "Save the corrected fit as restorable meshes."),
+                                true, ButtonStyle.Primary, GUILayout.Width(126))) { FinishSaving(); GUIUtility.ExitGUI(); }
                     }
                 }
                 if (error != null) EditorGUILayout.HelpBox(error, MessageType.Warning);
@@ -308,7 +326,22 @@ namespace MilltinaBreastGenerator
                 using (var scroll = new EditorGUILayout.ScrollViewScope(settingsScroll, GUILayout.Height(bodyHeight)))
                 {
                     settingsScroll = scroll.scrollPosition;
-                    using (new EditorGUILayout.VerticalScope(GUILayout.ExpandHeight(false))) DrawSettingsBody(width - 43);
+                    using (new EditorGUILayout.VerticalScope(GUILayout.ExpandHeight(false)))
+                    {
+                        DrawSettingsBody(width - 43);
+                        DrawRowDivider();
+                        using (new EditorGUILayout.HorizontalScope())
+                        {
+                            using (new EditorGUI.DisabledScope(PreviewingPatch)) DrawHistory();
+                            GUILayout.Label(unsavedEdits ? "Unsaved corrections" : "No unsaved corrections", EditorStyles.miniLabel);
+                        }
+                        DrawRowDivider();
+                        using (new EditorGUI.DisabledScope(PreviewingPatch))
+                            using (new EditorGUILayout.HorizontalScope()) DrawEditTools();
+                        DrawRowDivider();
+                        DrawToolControls(width - 43);
+                        if (!string.IsNullOrEmpty(status)) EditorGUILayout.LabelField(status, EditorStyles.wordWrappedMiniLabel);
+                    }
                     if (Event.current.type == EventType.Repaint)
                     {
                         float measured = GUILayoutUtility.GetLastRect().height;
@@ -319,29 +352,7 @@ namespace MilltinaBreastGenerator
                         }
                     }
                 }
-                DrawRowDivider();
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    using (new EditorGUI.DisabledScope(PreviewingPatch)) DrawHistory();
-                    if (width >= 560) GUILayout.Label(unsavedEdits ? "Unsaved corrections" : "No unsaved corrections", EditorStyles.miniLabel);
-                    GUILayout.FlexibleSpace();
-                    if (OverlayButton(new GUIContent(unsavedEdits ? "Discard" : "End Edit",
-                        unsavedEdits ? "End Edit Mode and discard unsaved corrections." : "End Edit Mode."),
-                        false, GUILayout.Width(68)))
-                    {
-                        if (!unsavedEdits || EditorUtility.DisplayDialog("Discard ShapeForge edits?",
-                            "Discard corrections from this session?", "Discard", "Keep editing"))
-                        {
-                            DiscardChanges();
-                            host.ShowGenerator();
-                        }
-                        GUIUtility.ExitGUI();
-                    }
-                    using (new EditorGUI.DisabledScope(!unsavedEdits || strokePiece != null || PreviewingPatch))
-                        if (ToolbarButton(new GUIContent("Save Corrections", "Save the corrected fit as restorable meshes."),
-                            true, ButtonStyle.Primary, GUILayout.Width(126))) FinishSaving();
-                }
-                if (unsavedEdits && width < 560) GUILayout.Label("Unsaved corrections", EditorStyles.miniLabel);
+
             }
             if (GUI.changed && sceneEditing) SceneView.RepaintAll();
         }
@@ -356,7 +367,7 @@ namespace MilltinaBreastGenerator
             {
                 DrawOutfitPieces(compact: true);
                 DrawRowDivider();
-                DrawToolPanel(width);
+                DrawFitPanel();
                 return;
             }
             float listWidth = Mathf.Clamp(width * .26f, 150, 215);
@@ -369,7 +380,7 @@ namespace MilltinaBreastGenerator
                     EditorGUI.DrawRect(new Rect(list.xMax + 6, list.y, 1, list.height), RuleColor);
                 }
                 GUILayout.Space(14);
-                using (new EditorGUILayout.VerticalScope()) DrawToolPanel(width - listWidth - 16);
+                using (new EditorGUILayout.VerticalScope()) DrawFitPanel();
             }
         }
 
@@ -408,18 +419,13 @@ namespace MilltinaBreastGenerator
                 SelectMesh(index);
         }
 
-        private void DrawToolPanel(float width)
+        private void DrawFitPanel()
         {
             using (new EditorGUILayout.HorizontalScope()) DrawSceneWeight();
             using (new EditorGUI.DisabledScope(PreviewingPatch))
                 using (new EditorGUILayout.HorizontalScope()) DrawFramePicker();
             if (!EditableFrame) EditorGUILayout.LabelField("Inspection only at this weight.", EditorStyles.miniLabel);
-            DrawRowDivider();
-            using (new EditorGUI.DisabledScope(PreviewingPatch))
-                using (new EditorGUILayout.HorizontalScope()) DrawEditTools();
-            DrawRowDivider();
-            DrawToolControls(width);
-            if (!string.IsNullOrEmpty(status)) EditorGUILayout.LabelField(status, EditorStyles.wordWrappedMiniLabel);
+
         }
 
         private void HandleEditKeys()
