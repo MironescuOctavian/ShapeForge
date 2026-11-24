@@ -723,7 +723,9 @@ namespace MilltinaBreastGenerator
             if (primary) floatingButton.normal.textColor = new Color(.13f, .13f, .13f);
             else if (active) floatingButton.normal.textColor = Color.white;
             if (primary) floatingButton.hover.textColor = floatingButton.active.textColor = floatingButton.normal.textColor;
-            button = GUILayoutUtility.GetRect(content, floatingButton, options);
+            // Give cloth rows the same layout width regardless of their label or selection icon.
+            var layoutContent = style == ButtonStyle.Row ? GUIContent.none : content;
+            button = GUILayoutUtility.GetRect(layoutContent, floatingButton, options);
             if (Event.current.type == EventType.Repaint)
             {
                 bool hover = GUI.enabled && button.Contains(Event.current.mousePosition);
