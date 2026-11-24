@@ -250,7 +250,7 @@ namespace MilltinaBreastGenerator
                 else
                     DrawEditor();
 
-                EditorGUILayout.Space(8);
+                EditorGUILayout.Space(4);
                 using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
                     EditorGUILayout.LabelField(string.IsNullOrEmpty(GUI.tooltip) ? Description : GUI.tooltip, hintStyle);
             }
