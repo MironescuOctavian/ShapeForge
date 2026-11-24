@@ -3,7 +3,7 @@ using System.Linq;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MilltinaBreastGenerator
+namespace ShapeForge
 {
     // Snapshot every selected piece before Generate assigns any meshes to renderers.
     internal sealed class LayerFit

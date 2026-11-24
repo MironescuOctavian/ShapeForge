@@ -5,7 +5,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-namespace MilltinaBreastGenerator
+namespace ShapeForge
 {
     internal sealed partial class FitPreview
     {

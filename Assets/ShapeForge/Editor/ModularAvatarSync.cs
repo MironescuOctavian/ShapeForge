@@ -2,7 +2,7 @@ using System;
 using UnityEditor;
 using UnityEngine;
 
-namespace MilltinaBreastGenerator
+namespace ShapeForge
 {
     internal static class ModularAvatarSync
     {

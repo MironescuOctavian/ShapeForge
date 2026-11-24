@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MilltinaBreastGenerator
+namespace ShapeForge
 {
     internal enum TransferMethod { Barycentric, Weighted, RBF }
 

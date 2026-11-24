@@ -7,7 +7,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
-namespace MilltinaBreastGenerator
+namespace ShapeForge
 {
     internal static class GeneratorAssets
     {
@@ -37,20 +37,38 @@ namespace MilltinaBreastGenerator
                 ? scope.GetComponentsInChildren<SkinnedMeshRenderer>(false)
                 : StageUtility.GetCurrentStageHandle().FindComponentsOfType<SkinnedMeshRenderer>();
 
-            SkinnedMeshRenderer found = null;
+            // A renderer with a known body name wins. Otherwise accept the renderer carrying clearly
+            // the most blendshapes, which is the body on a typical avatar.
+            SkinnedMeshRenderer named = null, richest = null;
+            bool ambiguousName = false;
+            int most = 0, second = 0;
             foreach (var renderer in renderers)
             {
                 if (!renderer.gameObject.activeInHierarchy || renderer == outfit ||
-                    renderer.name != "Milltina_body" || !renderer.sharedMesh || renderer.sharedMesh.blendShapeCount == 0)
+                    !renderer.sharedMesh || renderer.sharedMesh.blendShapeCount == 0)
                     continue;
                 if (scope && AvatarRoot(renderer) != root)
                     continue;
-                if (found)
-                    return null;
-                found = renderer;
+                if (IsBodyName(renderer.name))
+                {
+                    ambiguousName |= named;
+                    named = renderer;
+                }
+                int count = renderer.sharedMesh.blendShapeCount;
+                if (count > most) { second = most; most = count; richest = renderer; }
+                else if (count > second) second = count;
             }
-            return found;
+            if (named || ambiguousName)
+                return ambiguousName ? null : named;
+            return most >= FallbackBodyShapeCount && most >= second * 2 ? richest : null;
         }
+
+        // Names of body renderers recognised without further evidence.
+        private static readonly string[] BodyNames = { "Milltina_body" };
+        private const int FallbackBodyShapeCount = 20;
+
+        internal static bool IsBodyName(string name) =>
+            Array.Exists(BodyNames, body => string.Equals(body, name, StringComparison.OrdinalIgnoreCase));
 
         internal static string Validate(SkinnedMeshRenderer outfit, SkinnedMeshRenderer body, Transform root, string shape = ShapeTransfer.Shape)
         {
@@ -181,7 +199,7 @@ namespace MilltinaBreastGenerator
 
             Undo.IncrementCurrentGroup();
             int group = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("Restore Original Milltina Outfit Mesh");
+            Undo.SetCurrentGroupName("Restore Original Outfit Mesh");
             try
             {
                 var entries = info.Entries;

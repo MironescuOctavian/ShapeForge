@@ -4,7 +4,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
-namespace MilltinaBreastGenerator
+namespace ShapeForge
 {
     internal sealed class GeneratorWindow : EditorWindow
     {
@@ -110,7 +110,7 @@ namespace MilltinaBreastGenerator
 
         private void ClearBodyAsOutfit()
         {
-            if (outfitRoot && (outfitRoot.name == "Milltina_body" || (manualBody && manualBody.gameObject == outfitRoot)))
+            if (outfitRoot && (GeneratorAssets.IsBodyName(outfitRoot.name) || (manualBody && manualBody.gameObject == outfitRoot)))
             {
                 outfitRoot = null;
                 outfitInstanceId = 0;
@@ -523,7 +523,7 @@ namespace MilltinaBreastGenerator
                 }
             }
 
-            pieces = renderers.Where(r => r != body && r.name != "Milltina_body")
+            pieces = renderers.Where(r => r != body && !GeneratorAssets.IsBodyName(r.name))
                 .Select(r => new Piece(r, body, avatarRoot, overlapsRegion, sourceShapeName, sourceAvailable))
                 .OrderBy(piece => piece.OutsideRegion)
                 .ToArray();
@@ -562,7 +562,7 @@ namespace MilltinaBreastGenerator
                     if (piece.CanRestore)
                     {
                         if (GUILayout.Button(new GUIContent("Restore", "Remove only the chosen generated shape from this piece."), GUILayout.Width(72)))
-                            Run("Restore Milltina Piece", "Restored", new[] { piece }, RestorePiece);
+                            Run("Restore Piece", "Restored", new[] { piece }, RestorePiece);
                     }
                     else if (piece.OutsideRegion)
                         GUILayout.Label(new GUIContent("Outside shape area",

@@ -5,7 +5,7 @@ using System.Linq;
 using System.Reflection;
 using UnityEditor;
 using UnityEngine;
-using MilltinaBreastGenerator;
+using ShapeForge;
 
 public static class SceneEditingCheck
 {

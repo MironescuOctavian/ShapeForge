@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using MilltinaBreastGenerator;
+using ShapeForge;
 using UnityEngine;
 
 // Scores transfer accuracy on synthetic height-field bodies with garments hovering above them.

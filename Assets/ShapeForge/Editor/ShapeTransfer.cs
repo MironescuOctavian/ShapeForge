@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace MilltinaBreastGenerator
+namespace ShapeForge
 {
     internal enum BodyReference { Neutral, OtherActiveShapes, OtherActiveShapesAndTargetAt100 }
 
@@ -29,7 +29,7 @@ namespace MilltinaBreastGenerator
                         triangles.Add((a, b, c, area * .01f));
                 }
             }
-            bool milltinaMasks = mesh.GetBlendShapeIndex(Shape) >= 0 &&
+            bool shrinkMasks = mesh.GetBlendShapeIndex(Shape) >= 0 &&
                 mesh.GetBlendShapeIndex("Shrink_Clothes_on") >= 0;
             var points = new Vector3[vertices.Length];
             var moves = new bool[vertices.Length];
@@ -65,7 +65,7 @@ namespace MilltinaBreastGenerator
                     normalized.StartsWith("mask_", StringComparison.Ordinal) ||
                     normalized.Contains("body_hide") || normalized.Contains("body_mask") ||
                     normalized.Contains("shrink_clothes") ||
-                    (milltinaMasks && normalized.StartsWith("shrink_", StringComparison.Ordinal));
+                    (shrinkMasks && normalized.StartsWith("shrink_", StringComparison.Ordinal));
                 options.Add((name, namedMask || collapsed));
             }
             return options;

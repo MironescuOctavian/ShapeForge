@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace MilltinaBreastGenerator
+namespace ShapeForge
 {
     internal sealed class GeneratedMeshInfo : ScriptableObject
     {
