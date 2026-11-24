@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Put Edit Settings inside the existing ShapeForge panel. Back and Resume Edit keep the draft active. The Scene View bar now carries only live fit controls and the active tool hint.
+
 - Moved fit editing into Unity’s Scene View with an Edit Mode badge, fit controls and dockable Edit Settings.
 - Added click-to-pick with a fading silhouette, visible vertices, click and box selection, and a selection Move handle. Brushes preview their reach and can cancel the current stroke.
 

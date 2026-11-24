@@ -14,8 +14,8 @@ public static class ClippingFlowCheck
         var cloth = Create("Test cloth", new[] { new Vector3(.20f,.20f,.004f),
             new Vector3(.216f,.20f,.004f), new Vector3(.20f,.216f,.004f) });
         body.sharedMesh.AddBlendShapeFrame("Fit", 100, Enumerable.Repeat(Vector3.forward * .01f, 3).ToArray(), null, null);
-        FitPreview.Open(body, new[] { cloth }, "Fit");
-        var window = EditorWindow.GetWindow<FitPreview>();
+        var window = new FitPreview();
+        window.Start(body, new[] { cloth }, "Fit");
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
         var type = typeof(FitPreview);
         object Field(string name) => type.GetField(name, flags).GetValue(window);
@@ -50,7 +50,7 @@ public static class ClippingFlowCheck
         Call("MoveHistory", Field("brushUndo"), Field("brushRedo"));
         if (!layer.Correction(cloth, 100).SequenceEqual(prior))
             throw new Exception("Undo did not restore prior draft");
-        window.Close();
+        window.Release();
         Debug.Log("CLIPPING PREVIEW CANCEL APPLY UNDO PASSED");
     }
 

@@ -9,7 +9,6 @@ namespace MilltinaBreastGenerator
 {
     internal sealed partial class FitPreview
     {
-        private bool settingsLaidOut;
         private Vector3 startingScenePivot;
         private Quaternion startingSceneRotation;
         private float startingSceneSize;
@@ -23,7 +22,7 @@ namespace MilltinaBreastGenerator
         private void BeginSceneEditing()
         {
             editView = SceneView.lastActiveSceneView;
-            if (!editView) editView = GetWindow<SceneView>();
+            if (!editView) editView = EditorWindow.GetWindow<SceneView>();
             var stage = StageUtility.GetCurrentStageHandle();
             if (pieces.Exists(piece => !piece.Source.gameObject.scene.IsValid() ||
                 !StageUtility.GetStageHandle(piece.Source.gameObject).Equals(stage)))
@@ -55,21 +54,8 @@ namespace MilltinaBreastGenerator
             RenderPipelineManager.beginCameraRendering += DrawPipelineSceneMeshes;
             AssemblyReloadEvents.beforeAssemblyReload += Release;
             EditorApplication.playModeStateChanged += EndEditingBeforePlay;
+            EditorApplication.update += Update;
             SceneView.RepaintAll();
-        }
-
-        private void LayoutFirstSettingsWindow()
-        {
-            if (settingsLaidOut) return;
-            settingsLaidOut = true;
-            EditorApplication.delayCall += () =>
-            {
-                if (!this || !editView || docked) return;
-                var area = editView.position;
-                var current = position;
-                if (current.width > 720 || current.height > 540)
-                    position = new Rect(area.x + Mathf.Max(0, area.width - 560), area.y + 126, 540, 340);
-            };
         }
 
         private void EndSceneEditing()
@@ -81,6 +67,7 @@ namespace MilltinaBreastGenerator
             RenderPipelineManager.beginCameraRendering -= DrawPipelineSceneMeshes;
             AssemblyReloadEvents.beforeAssemblyReload -= Release;
             EditorApplication.playModeStateChanged -= EndEditingBeforePlay;
+            EditorApplication.update -= Update;
             foreach (var piece in pieces)
                 if (piece.HiddenBySession && piece.Source)
                     SceneVisibilityManager.instance.Show(piece.Source.gameObject, false);
@@ -101,17 +88,11 @@ namespace MilltinaBreastGenerator
 
         private void EndEditingBeforePlay(PlayModeStateChange change)
         {
-            if (change == PlayModeStateChange.ExitingEditMode) Release();
-        }
-
-        private bool ConfirmRestart()
-        {
-            if (!unsavedEdits) return true;
-            int result = EditorUtility.DisplayDialogComplex("ShapeForge Edit Mode",
-                "Save corrections before starting another session?", "Save", "Cancel", "Discard");
-            if (result == 1) return false;
-            if (result == 0) FinishSaving();
-            return !unsavedEdits || result == 2;
+            if (change == PlayModeStateChange.ExitingEditMode)
+            {
+                Release();
+                if (host) host.ShowGenerator();
+            }
         }
 
         private void FinishSaving()
@@ -127,18 +108,13 @@ namespace MilltinaBreastGenerator
             Repaint();
         }
 
-        public override void SaveChanges()
-        {
-            FinishSaving();
-            if (!unsavedEdits) base.SaveChanges();
-        }
+        internal void SaveChanges() => FinishSaving();
 
-        public override void DiscardChanges()
+        internal void DiscardChanges()
         {
             Release();
             status = error = null;
             Repaint();
-            base.DiscardChanges();
         }
 
         private void DrawPipelineSceneMeshes(ScriptableRenderContext context, Camera camera) => DrawSceneMeshes(camera);
@@ -166,7 +142,13 @@ namespace MilltinaBreastGenerator
             float scale = EditorGUIUtility.pixelsPerPoint;
             var viewport = new Rect(0, 0, camera.pixelWidth / scale, camera.pixelHeight / scale);
             if (viewport.width <= 0 || viewport.height <= 0) return;
-            var overlay = new Rect(48, 10, Mathf.Min(338, Mathf.Max(250, viewport.width - 56)), frameWeights.Length > 1 ? 122 : 103);
+            float inset = Mathf.Min(48, viewport.width * .12f);
+            float overlayWidth = Mathf.Min(565, viewport.width - inset - 10);
+            bool compact = overlayWidth < 520;
+            bool narrow = overlayWidth < 300;
+            float overlayHeight = narrow ? 86 : compact ? 60 : 34;
+            if (tool != Tool.Inspect) overlayHeight += 25;
+            var overlay = new Rect(inset, 10, overlayWidth, overlayHeight);
             var input = Event.current;
             bool repaint = input.type == EventType.Repaint;
             if (repaint) DrawMeshPulse(camera);
@@ -177,7 +159,7 @@ namespace MilltinaBreastGenerator
                 bool overOverlay = overlay.Contains(input.mousePosition);
                 HandleEditKeys();
                 if (repaint) DrawSceneMarkers(viewport, overOverlay);
-                DrawSceneToolbar(overlay);
+                DrawSceneToolbar(overlay, compact, narrow);
                 if (input.type != EventType.Used) Navigate(viewport, overOverlay);
             }
             finally
@@ -188,7 +170,7 @@ namespace MilltinaBreastGenerator
                 view.Repaint();
         }
 
-        private void DrawSceneToolbar(Rect overlay)
+        private void DrawSceneToolbar(Rect overlay, bool compact, bool narrow)
         {
             if (Event.current.type == EventType.Repaint)
             {
@@ -200,40 +182,81 @@ namespace MilltinaBreastGenerator
             {
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    GUILayout.Label("◆  ShapeForge Edit Mode", EditorStyles.boldLabel);
-                    GUILayout.FlexibleSpace();
-                    if (GUILayout.Button("Settings", EditorStyles.miniButton, GUILayout.Width(64))) Focus();
+                    ToolbarLabel(overlay.width < 238 ? "◆ Edit Mode" : "◆ ShapeForge Edit Mode", overlay.width < 238 ? 91 : 148);
+                    if (!compact) DrawSceneFit();
+                    else GUILayout.FlexibleSpace();
+                    if (OverlayButton(new GUIContent("Settings"), false, GUILayout.Width(64)) && host)
+                        host.ShowEditSettings();
                 }
-                using (new EditorGUI.DisabledScope(PreviewingPatch))
+                if (compact && !narrow)
+                    using (new EditorGUILayout.HorizontalScope()) DrawSceneFit();
+                if (narrow)
                 {
-                    using (new EditorGUILayout.HorizontalScope())
-                        DrawMeshPicker();
-                    float next = EditorGUILayout.Slider("Fit", weight, 0, Mathf.Max(100, frameWeights[frameWeights.Length - 1]));
-                    if (next != weight) SetFitWeight(next);
-                    if (frameWeights.Length > 1)
-                    {
-                        int current = Array.IndexOf(frameWeights, weight);
-                        int frame = EditorGUILayout.Popup("Edit frame", current, Array.ConvertAll(frameWeights, value => $"{value:g}"));
-                        if (frame >= 0 && frame != current) SetFitWeight(frameWeights[frame]);
-                    }
-                    using (new EditorGUILayout.HorizontalScope())
-                    {
-                        int nextTool = EditorGUILayout.Popup((int)tool, SceneToolLabels);
-                        if (nextTool != (int)tool)
-                        {
-                            SelectTool((Tool)nextTool);
-                            Repaint();
-                        }
-                        foreach (int preset in Presets)
-                            if (GUILayout.Button(preset.ToString(), EditorStyles.miniButton, GUILayout.Width(32))) SetFitWeight(preset);
-                    }
+                    using (new EditorGUI.DisabledScope(PreviewingPatch))
+                        using (new EditorGUILayout.HorizontalScope()) DrawMeshPicker();
+                    using (new EditorGUILayout.HorizontalScope()) DrawSceneWeight();
+                }
+                if (tool != Tool.Inspect)
+                {
+                    var hint = $"{ToolLabels[(int)tool]} · {SceneToolHint()}";
+                    GUILayout.Label(hint, EditorStyles.whiteMiniLabel, GUILayout.Height(21));
                 }
             }
         }
 
-        private static readonly string[] SceneToolLabels =
-            { "Inspect & Select", "Sculpt", "Vertex Control", "Clipping", "Restore Brush", "Relax" };
+        private void DrawSceneFit()
+        {
+            using (new EditorGUI.DisabledScope(PreviewingPatch))
+            {
+                DrawMeshPicker();
+                DrawGroupDivider();
+                DrawSceneWeight();
+            }
+        }
 
+        private void DrawSceneWeight()
+        {
+            using (new EditorGUI.DisabledScope(PreviewingPatch))
+            {
+                ToolbarLabel("Fit", 18);
+                float next = EditorGUILayout.Slider(weight, 0, Mathf.Max(100, frameWeights[frameWeights.Length - 1]),
+                    GUILayout.MinWidth(50), GUILayout.ExpandWidth(true), GUILayout.Height(ControlHeight));
+                if (next != weight) SetFitWeight(next);
+            }
+        }
+
+        private string SceneToolHint()
+        {
+            if (!EditableFrame && (sculpt || straighten)) return "Choose an authored frame in Settings to edit.";
+            if (PreviewingPatch) return "Review the fix, then Apply or Cancel in Settings.";
+            if (sculpt) return $"{BrushLabel()} · Drag to edit. Shift-scroll to resize.";
+            if (boxMode) return pieces[selectedMesh + 1].SelectionCount > 0 ? "Drag Move to reposition." : "Click or drag to select vertices.";
+            if (straighten) return ToolHint();
+            return "Scan the selected garment in Settings.";
+        }
+
+        private string BrushLabel() => brushMode switch
+        {
+            Brush.ClearSkin => "Clipping Brush",
+            Brush.Restore => "Restore Brush",
+            Brush.Relax => "Relax",
+            _ => SculptBrushNames[Array.IndexOf(SculptBrushes, brushMode)]
+        };
+
+        private static readonly string[] ToolLabels =
+            { "Inspect", "Sculpt", "Vertex Control", "Clipping", "Restore", "Relax" };
+
+        private void DrawFramePicker()
+        {
+            if (frameWeights.Length > 1)
+            {
+                int current = Array.IndexOf(frameWeights, weight);
+                int frame = EditorGUILayout.Popup("Edit frame", current, Array.ConvertAll(frameWeights, value => $"{value:g}"));
+                if (frame >= 0 && frame != current) SetFitWeight(frameWeights[frame]);
+            }
+            foreach (int preset in Presets)
+                if (OverlayButton(new GUIContent($"{preset}%"), weight == preset, GUILayout.Width(40))) SetFitWeight(preset);
+        }
         private Ray SceneRay(Rect rect, Vector2 mouse) => EditCamera.ViewportPointToRay(
             new Vector3((mouse.x - rect.x) / rect.width, 1 - (mouse.y - rect.y) / rect.height));
 

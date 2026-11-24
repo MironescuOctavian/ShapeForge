@@ -14,9 +14,11 @@ public static class SceneEditingCheck
         var inner = Create("Inner", OutfitVertices(.004f));
         var outer = Create("Outer", OutfitVertices(.006f));
         body.sharedMesh.AddBlendShapeFrame("Fit", 100, Enumerable.Repeat(Vector3.back * .01f, 3).ToArray(), null, null);
-        FitPreview.Open(body, new[] { inner, outer }, "Fit");
-        var window = EditorWindow.GetWindow<FitPreview>();
+        var host = ScriptableObject.CreateInstance<GeneratorWindow>();
+        host.StartEdit(body, new[] { inner, outer }, "Fit", TransferMethod.Barycentric);
         const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
+        var sessionField = typeof(GeneratorWindow).GetField("editSession", flags);
+        var window = (FitPreview)sessionField.GetValue(host);
         var type = typeof(FitPreview);
         object Get(string name) => type.GetField(name, flags).GetValue(window);
         void Set(string name, object value) => type.GetField(name, flags).SetValue(window, value);
@@ -56,6 +58,10 @@ public static class SceneEditingCheck
             Invoke("ApplyDraft", piece, moved);
             Set("strokeMoved", true);
             Invoke("EndStroke", true);
+            host.ShowGenerator();
+            host.StartEdit(body, new[] { inner }, "Fit", TransferMethod.Barycentric);
+            Check(sessionField.GetValue(host) == window && layer.Correction(inner, 100).SequenceEqual(moved),
+                "Returning from the generator must preserve the pending corrections and edit session.");
             Invoke("MoveHistory", Get("brushUndo"), Get("brushRedo"));
             Check(((Vector3[])Invoke("CurrentMotion", piece)).SequenceEqual(start), "Undo must revert the move.");
             window.DiscardChanges();
@@ -65,7 +71,7 @@ public static class SceneEditingCheck
         }
         finally
         {
-            window.Close();
+            UnityEngine.Object.DestroyImmediate(host);
             UnityEngine.Object.DestroyImmediate(body.gameObject);
             UnityEngine.Object.DestroyImmediate(inner.gameObject);
             UnityEngine.Object.DestroyImmediate(outer.gameObject);

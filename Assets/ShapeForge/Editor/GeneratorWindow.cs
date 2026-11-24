@@ -42,6 +42,8 @@ namespace MilltinaBreastGenerator
         private GUIStyle hoverHelp;
         private string summary;
         private MessageType summaryType;
+        private FitPreview editSession;
+        private bool showEditSettings;
 
         private readonly struct Piece
         {
@@ -83,6 +85,7 @@ namespace MilltinaBreastGenerator
         private void OnEnable()
         {
             minSize = new Vector2(400, 440);
+            saveChangesMessage = "Save the ShapeForge corrections before closing?";
             wantsMouseMove = true;
             RecoverOutfit();
             ClearBodyAsOutfit();
@@ -117,6 +120,8 @@ namespace MilltinaBreastGenerator
 
         private void OnDisable()
         {
+            editSession?.Release();
+            editSession = null;
             EditorApplication.hierarchyChanged -= InvalidateSelection;
             EditorApplication.projectChanged -= InvalidateBodyShapes;
             EditorApplication.playModeStateChanged -= OnPlayModeChanged;
@@ -148,6 +153,46 @@ namespace MilltinaBreastGenerator
             Repaint();
         }
 
+        internal void ShowEditSettings()
+        {
+            showEditSettings = true;
+            Focus();
+            Repaint();
+        }
+
+        internal void ShowGenerator()
+        {
+            showEditSettings = false;
+            InvalidateSelection();
+        }
+
+        internal void EditChanged()
+        {
+            hasUnsavedChanges = editSession?.HasEdits == true;
+            Repaint();
+        }
+
+        public override void SaveChanges()
+        {
+            editSession?.SaveChanges();
+            EditChanged();
+            if (!hasUnsavedChanges) base.SaveChanges();
+        }
+
+        public override void DiscardChanges()
+        {
+            editSession?.DiscardChanges();
+            ShowGenerator();
+            base.DiscardChanges();
+        }
+
+        internal void StartEdit(SkinnedMeshRenderer body, SkinnedMeshRenderer[] outfits, string shape, TransferMethod method)
+        {
+            editSession ??= new FitPreview(this);
+            if (!editSession.Active) editSession.Start(body, outfits, shape, method);
+            ShowEditSettings();
+        }
+
         private void OnGUI()
         {
             var input = Event.current;
@@ -155,6 +200,11 @@ namespace MilltinaBreastGenerator
                 Repaint();
             if (input.type == EventType.KeyDown && input.shift && input.keyCode == KeyCode.Space)
                 GUI.FocusControl(null);
+            if (showEditSettings && editSession != null && !changingPlayMode && !EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                editSession.DrawSettings(position.width);
+                return;
+            }
 
             frame ??= new GUIStyle { padding = new RectOffset(12, 12, 10, 10) };
             heading ??= new GUIStyle(EditorStyles.boldLabel) { fontSize = 21, normal = { textColor = new Color(1f, .82f, .46f) } };
@@ -184,6 +234,11 @@ namespace MilltinaBreastGenerator
                     GUI.Label(new Rect(banner.x + 13, banner.y + 30, banner.width - 26, 16),
                         "Precision Blendshape Generator", EditorStyles.whiteMiniLabel);
                     GUI.contentColor = previous;
+                }
+                if (editSession?.Active == true && GUI.Button(new Rect(banner.xMax - 118, banner.y + 13, 106, 26), "Resume Edit"))
+                {
+                    ShowEditSettings();
+                    GUIUtility.ExitGUI();
                 }
                 EditorGUILayout.Space(6);
 
@@ -307,8 +362,8 @@ namespace MilltinaBreastGenerator
             }
 
             EditorGUILayout.Space(4);
-            float listHeight = Mathf.Min(pieces.Length, 5) * 29 + 4;
-            using (var scroll = new EditorGUILayout.ScrollViewScope(pieceScroll, GUILayout.MinHeight(listHeight), GUILayout.ExpandHeight(true)))
+            float listHeight = Mathf.Clamp(position.height * .45f, 116, Mathf.Max(116, pieces.Length * 29 + 4));
+            using (var scroll = new EditorGUILayout.ScrollViewScope(pieceScroll, GUILayout.Height(listHeight)))
             {
                 pieceScroll = scroll.scrollPosition;
                 foreach (var piece in pieces)
@@ -318,20 +373,24 @@ namespace MilltinaBreastGenerator
             EditorGUILayout.Space(6);
             var selected = pieces.Where(p => p.CanGenerate && !uncheckedPieces.Contains(p.Renderer)).ToArray();
             var restorable = pieces.Where(p => p.CanRestore).ToArray();
+            bool editing = editSession?.Active == true;
             using (new EditorGUILayout.HorizontalScope())
             {
-                using (new EditorGUI.DisabledScope(selected.Length == 0))
+                using (new EditorGUI.DisabledScope(selected.Length == 0 && !editing))
                 {
                     float actionWidth = Mathf.Max(90f, (position.width - 36f) * .32f);
                     var previousColor = GUI.backgroundColor;
 
-                    bool openPreview = GUILayout.Button(new GUIContent("Edit", "See the fit and make local corrections before saving."), GUILayout.Height(34), GUILayout.Width(actionWidth));
-
-                    if (openPreview)
-                        FitPreview.Open(body, selected.Select(p => p.Renderer).ToArray(), sourceShapeName, transferMethod);
+                    if (!editing && GUILayout.Button(new GUIContent("Edit", "Go to Edit Settings in ShapeForge."), GUILayout.Height(34), GUILayout.Width(actionWidth)))
+                    {
+                        StartEdit(body, selected.Select(p => p.Renderer).ToArray(), sourceShapeName, transferMethod);
+                        GUIUtility.ExitGUI();
+                    }
                     GUI.backgroundColor = new Color(1f, .74f, .34f);
-                    bool generate = GUILayout.Button(new GUIContent($"Generate ({selected.Length})", "Save the chosen shape on each checked piece. Existing outfit shapes stay available."),
-                        GUILayout.Height(34), GUILayout.Width(actionWidth));
+                    bool generate;
+                    using (new EditorGUI.DisabledScope(editing))
+                        generate = GUILayout.Button(new GUIContent($"Generate ({selected.Length})", "Save the chosen shape on each checked piece. Existing outfit shapes stay available."),
+                            GUILayout.Height(34), GUILayout.Width(actionWidth));
                     GUI.backgroundColor = previousColor;
                     if (generate)
                     {
@@ -350,7 +409,7 @@ namespace MilltinaBreastGenerator
                         Run("Generate ShapeForge Blendshape", "Generated", selected, r => GeneratorAssets.Generate(r, body, avatarRoot, fit: fit, shape: sourceShapeName));
                     }
                 }
-                using (new EditorGUI.DisabledScope(restorable.Length == 0))
+                using (new EditorGUI.DisabledScope(restorable.Length == 0 || editing))
                 {
                     if (GUILayout.Button(new GUIContent($"Restore All ({restorable.Length})",
                         "Remove the chosen generated shape from every applicable piece in this outfit."), GUILayout.Height(34)))
