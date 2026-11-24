@@ -215,7 +215,7 @@ namespace MilltinaBreastGenerator
             if (sculpt) return $"{BrushLabel()} · Drag to edit. Shift-scroll to resize.";
             if (boxMode) return pieces[selectedMesh + 1].SelectionCount > 0 ? "Drag Move to reposition." : "Click or drag to select vertices.";
             if (straighten) return ToolHint();
-            return "Scan the selected garment in Settings.";
+            return "Scan the selected cloth in Settings.";
         }
 
         private string BrushLabel() => brushMode switch
@@ -227,7 +227,7 @@ namespace MilltinaBreastGenerator
         };
 
         private static readonly string[] ToolLabels =
-            { "Inspect", "Sculpt", "Vertex Control", "Clipping", "Restore", "Relax" };
+            { "Select Cloth", "Sculpt", "Move", "Clipping", "Cleanup", "Cleanup" };
 
         private void DrawFramePicker()
         {
