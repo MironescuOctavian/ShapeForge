@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 
 namespace MilltinaBreastGenerator
 {
-    internal sealed class FitPreview : EditorWindow
+    internal sealed partial class FitPreview : EditorWindow
     {
-        private static readonly Unity.Profiling.ProfilerMarker RenderSample = new("ShapeForge.Preview.Render");
         private static readonly Unity.Profiling.ProfilerMarker BakeSample = new("ShapeForge.Preview.Bake");
         private static readonly Unity.Profiling.ProfilerMarker BrushSample = new("ShapeForge.Preview.Brush");
         private static readonly Unity.Profiling.ProfilerMarker ClippingSample = new("ShapeForge.Preview.Clipping");
@@ -33,6 +33,9 @@ namespace MilltinaBreastGenerator
             internal ShapeTransfer.TriangleSurface BrushSurface;
             internal Vector3[] BrushRest;
             internal List<(int Target, float Length)>[] BrushEdges;
+            internal bool SceneVisible = true;
+            internal bool HiddenBySession;
+            internal (int A, int B, int First, int Second)[] OutlineEdges;
             internal (int A, int B, int C)[] Faces;
         }
 
@@ -40,8 +43,6 @@ namespace MilltinaBreastGenerator
         private readonly List<Mesh> generated = new();
         private PreviewRenderUtility preview;
         private Vector3 focus;
-        private Vector3 forward;
-        private Vector3 up;
         private float size;
         private SkinnedMeshRenderer body;
         private string targetShape = ShapeTransfer.Shape;
@@ -52,7 +53,6 @@ namespace MilltinaBreastGenerator
         private Tool tool;
         private Brush sculptBrush;
         private bool clippingBrush;
-        private string toolHelp;
         private Brush brushMode;
         private float brushStrength = .5f;
         private float brushGapMm = .5f;
@@ -67,38 +67,42 @@ namespace MilltinaBreastGenerator
         private Vector2 stampPosition, lastStampPosition;
         private bool stampThroughBody;
         private bool SurfaceBrush => brushMode is Brush.ClearSkin or Brush.Restore or Brush.Relax;
+        private bool PaintBrush => SurfaceBrush || brushMode is Brush.Multiply or Brush.Protect or Brush.Unprotect;
         private float transferMultiplier = 1.2f;
         private Vector3[] strokeNormals;
         private Vector3[] strokeSmooth;
         private bool sculpt;
         private float vertexSize = 4;
         private bool showClipMarkers = true;
-        private bool leftSide;
         private float brushRadius = .015f;
         private readonly Stack<(Piece Piece, float Weight, Vector3[] Prior, bool[] Mask)> brushUndo = new();
         private readonly Stack<(Piece Piece, float Weight, Vector3[] Prior, bool[] Mask)> brushRedo = new();
-        private Texture viewImage;
-        private Material selectionHighlight;
-        private double selectionHighlightUntil;
-        private Rect renderedRect;
-        private Vector3 renderedPosition;
-        private Quaternion renderedRotation;
-        private Color renderedBackground;
-        private Material renderedSky;
-        private float renderedNear;
-        private float renderedFar;
+        private SceneView editView;
+        private bool sceneEditing;
+        private double meshPulseStarted = -1;
+        private double lastScenePulse;
+        private Camera EditCamera => editView ? editView.camera : preview.camera;
+        private bool movingSelection;
+        private Vector3[] priorCorrection;
+        private Vector3[] priorDraft;
+        private bool[] priorProtection;
+        private bool priorUnsaved;
+        private float[] strokeFalloff;
+        private float relaxStrength = .2f;
+        private float BrushStrength
+        {
+            get => brushMode == Brush.Relax ? relaxStrength : brushStrength;
+            set { if (brushMode == Brush.Relax) relaxStrength = value; else brushStrength = value; }
+        }
         private const float ToolbarInset = 14;
         private const float ControlHeight = 25;
         private static readonly Color Chrome = new(.102f, .102f, .11f);
         private static readonly Color RuleColor = new(.23f, .226f, .24f);
         private static readonly Color Gold = new(.93f, .72f, .39f);
-        private float toolbarHeight = 180f;
         private GUIStyle floatingButton;
         private GUIStyle floatingLabel;
         private GUIStyle hoverHelp;
         private string controlHelp;
-        private Rect toolbarHelpRect;
-        private bool showDisplay;
         private int selectedMesh;
         private bool isolateMesh;
         private GUIContent[] editableNames;
@@ -117,6 +121,8 @@ namespace MilltinaBreastGenerator
         private IEnumerator<int> clippingWork;
         private Piece visibilityPiece;
         private Vector3 visibilityOrigin;
+        private Quaternion visibilityRotation;
+        private bool visibilityOrthographic;
         private sbyte[] vertexVisibility;
         private static readonly int[] Presets = { 0, 50, 100 };
         private sealed class ClippingPatch
@@ -139,16 +145,6 @@ namespace MilltinaBreastGenerator
         private bool unsavedEdits;
         private bool PreviewingPatch => patchBaseMesh != null;
         private string status;
-        private float zoom = 1f;
-        private Vector3 pan;
-        private readonly HashSet<KeyCode> flyKeys = new();
-        private bool flying;
-        private bool panning;
-        private int flyControl;
-        private double lastFlyUpdate;
-        private Quaternion flyRotation;
-        private float flyDistance;
-        private float flySpeed = 1f;
         private Piece strokePiece;
         private bool straighten;
         private Piece spanPiece;
@@ -161,6 +157,7 @@ namespace MilltinaBreastGenerator
         private List<(float[] Distances, Vector3 Sign)> strokeBrushes;
         private int symmetryAxes;
         private Vector3 strokeCenter;
+        private (int A, int B, int C) strokeFace;
         private Vector2 strokeCurrent;
         private bool strokeInDepth;
         private Vector2 hoverMouse;
@@ -173,23 +170,22 @@ namespace MilltinaBreastGenerator
         private double nextDragUpdate;
         private float weight = 100;
         private float[] frameWeights = { 100 };
-        private bool EditableFrame => Array.IndexOf(frameWeights, weight) >= 0;
-        private int viewIndex;
-        private float yaw;
-        private float elevation;
+        private bool EditableFrame => weight > 0 && Array.IndexOf(frameWeights, weight) >= 0;
         private string error;
-        private static readonly string[] ViewLabels = { "Front", "Side", "Back", "Top", "Bottom" };
 
         internal static void Open(SkinnedMeshRenderer body, SkinnedMeshRenderer[] outfits, string shape = ShapeTransfer.Shape,
             TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral)
         {
-            var window = GetWindow<FitPreview>("ShapeForge Fit Editor");
-            window.wantsMouseMove = true;
-            window.minSize = new Vector2(540, 360);
-            window.titleContent = new GUIContent("ShapeForge Fit Editor");
-            window.SelectTool(Tool.Inspect);
+            var window = GetWindow<FitPreview>("ShapeForge Edit Settings", true, typeof(GeneratorWindow));
+            if (!window.ConfirmRestart()) return;
+            window.minSize = new Vector2(430, 265);
+            window.titleContent = new GUIContent("ShapeForge Edit Settings");
+            window.saveChangesMessage = "Save the ShapeForge corrections before closing Edit Mode?";
             window.Build(body, outfits, shape, method, mode);
+            window.SelectTool(Tool.Inspect);
+            if (!Application.isBatchMode && window.preview != null) window.BeginSceneEditing();
             window.Show();
+            if (window.sceneEditing) window.LayoutFirstSettingsWindow();
         }
 
         private LayerFit previewFit;
@@ -204,17 +200,7 @@ namespace MilltinaBreastGenerator
             try
             {
                 preview = new PreviewRenderUtility();
-                preview.cameraFieldOfView = 60;
-                zoom = 1f;
-                pan = Vector3.zero;
-                preview.lights[0].intensity = 1.2f;
-                preview.lights[0].transform.rotation = Quaternion.Euler(40, 215, 0);
-                preview.ambientColor = Color.gray;
-
-                var avatar = GeneratorAssets.AvatarRoot(body);
-                var orientation = avatar ? avatar : body.transform.root;
-                forward = orientation.forward;
-                up = orientation.up;
+                weight = 100;
                 var region = ShapeTransfer.ShapeBounds(body, targetShape, mode);
                 focus = region.center;
                 size = Mathf.Max(region.size.magnitude * 0.6f, 0.02f);
@@ -278,129 +264,88 @@ namespace MilltinaBreastGenerator
             var renderer = piece.Renderer;
             renderer.SetBlendShapeWeight(renderer.sharedMesh.GetBlendShapeIndex(targetShape), piece.Source == body && previewFit.Reverse ? 100 - weight : weight);
             renderer.BakeMesh(piece.Baked);
-            viewImage = null;
             var toWorld = renderer.localToWorldMatrix;
             piece.World = Array.ConvertAll(piece.Baked.vertices, toWorld.MultiplyPoint3x4);
             var normalsToWorld = renderer.worldToLocalMatrix.transpose;
             piece.WorldNormals = Array.ConvertAll(piece.Baked.normals, normalsToWorld.MultiplyVector);
             piece.PickSurfaceDirty = true;
+            if (outlinePiece == piece) outlinePiece = null;
+            if (sceneEditing) SceneView.RepaintAll();
             piece.Faces ??= new List<(int A, int B, int C)>(Triangles(piece.Baked)).ToArray();
         }
 
         private void OnGUI()
         {
-            if (error != null)
+            if (error != null) EditorGUILayout.HelpBox(error, MessageType.Warning);
+            using (new EditorGUILayout.HorizontalScope())
             {
-                EditorGUILayout.HelpBox(error, MessageType.Warning);
-                return;
+                if (GUILayout.Button("Generator", GUILayout.Width(92))) GeneratorWindow.Open();
+                GUILayout.FlexibleSpace();
+                if (sceneEditing && GUILayout.Button("Focus Scene", GUILayout.Width(92))) editView.Focus();
+                if (preview != null && GUILayout.Button("Discard", GUILayout.Width(76)))
+                {
+                    if (!unsavedEdits || EditorUtility.DisplayDialog("Discard ShapeForge edits?",
+                        "Discard corrections from this session?", "Discard", "Keep editing")) DiscardChanges();
+                    GUIUtility.ExitGUI();
+                }
             }
             if (preview == null)
             {
-                EditorGUILayout.LabelField("Open the Fit Editor from the generator to compare an outfit.");
+                if (!string.IsNullOrEmpty(status)) EditorGUILayout.HelpBox(status, MessageType.Info);
+                EditorGUILayout.LabelField("Click Edit in the ShapeForge generator to start.");
                 return;
             }
 
-            if (PreviewingPatch)
-            {
-                if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Escape)
-                {
-                    CancelPatchPreview();
-                    Event.current.Use();
-                }
-            }
-            else
-            {
-                HandleHistoryShortcut();
-                HandleBoxShortcut();
-                HandleSpanShortcut();
-            }
-            var toolbar = new Rect(ToolbarInset, 6, position.width - 2 * ToolbarInset, position.height - 12);
+            HandleEditKeys();
             var input = Event.current;
             if (input.type == EventType.MouseMove) Repaint();
-            var toolbarFrame = new Rect(0, 0, position.width, toolbar.y + toolbarHeight + 8);
-            var footer = new Rect(0, position.height - 32, position.width, 32);
-            var viewport = new Rect(0, toolbarFrame.yMax, position.width, Mathf.Max(1, footer.y - toolbarFrame.yMax));
-            var displayOptions = new Rect(position.width - ToolbarInset - 207, viewport.y + 6, 207, 30);
-            bool overControls = toolbarFrame.Contains(input.mousePosition) || footer.Contains(input.mousePosition) ||
-                (showDisplay && displayOptions.Contains(input.mousePosition));
             bool repaint = input.type == EventType.Repaint;
             if (repaint)
             {
                 controlHelp = null;
-                toolHelp = null;
-                toolbarHelpRect = Rect.zero;
             }
-            if (repaint)
+            using (var scroll = new EditorGUILayout.ScrollViewScope(settingsScroll))
             {
-                DrawViewport(viewport, overControls);
-                EditorGUI.DrawRect(toolbarFrame, Chrome);
-                DrawOutline(toolbarFrame, RuleColor);
-            }
-            using (new GUILayout.AreaScope(toolbar))
-            {
-                using (new EditorGUILayout.VerticalScope())
-                    DrawToolbar(toolbar.width);
-                if (repaint)
-                {
-                    float height = GUILayoutUtility.GetLastRect().height;
-                    if (!Mathf.Approximately(toolbarHeight, height))
-                    {
-                        toolbarHeight = height;
-                        Repaint();
-                    }
-                }
-            }
-            if (showDisplay)
-            {
-                if (repaint)
-                {
-                    EditorGUI.DrawRect(displayOptions, Chrome);
-                    DrawOutline(displayOptions, RuleColor);
-                }
-                using (new GUILayout.AreaScope(new Rect(displayOptions.x + 8, displayOptions.y + 4, 191, 25)))
-                    using (new EditorGUILayout.HorizontalScope()) DrawVisibility();
-            }
-
-            if (repaint)
-            {
-                EditorGUI.DrawRect(footer, Chrome);
-                DrawOutline(footer, RuleColor);
-            }
-            using (new GUILayout.AreaScope(new Rect(12, footer.y + 3, footer.width - 24, 26)))
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                string line = string.IsNullOrEmpty(status) ? editableNames[selectedMesh].text : status.Split('\n')[0];
-                GUILayout.Label(line, EditorStyles.whiteMiniLabel, GUILayout.ExpandWidth(true));
-                LastControlHelp(status);
+                settingsScroll = scroll.scrollPosition;
+                DrawToolbar(position.width - 24);
+                DrawRowDivider();
                 var piece = pieces[selectedMesh + 1];
-                if (unsavedEdits)
-                    GUILayout.Label("Unsaved edits", EditorStyles.whiteMiniLabel, GUILayout.Width(79));
-                if (piece.SelectionCount > 0)
+                using (new EditorGUILayout.HorizontalScope())
                 {
-                    GUILayout.Label($"{piece.SelectionCount} selected", EditorStyles.whiteMiniLabel, GUILayout.Width(90));
-                    using (new EditorGUI.DisabledScope(PreviewingPatch))
-                        if (GUILayout.Button("Clear", EditorStyles.miniButton, GUILayout.Width(46)))
-                            ClearSelection(piece);
+                    GUILayout.Label(piece.Source ? piece.Source.name : "Missing mesh", EditorStyles.boldLabel);
+                    GUILayout.FlexibleSpace();
+                    if (piece.SelectionCount > 0)
+                    {
+                        GUILayout.Label($"{piece.SelectionCount} selected", EditorStyles.miniLabel);
+                        using (new EditorGUI.DisabledScope(PreviewingPatch))
+                            if (GUILayout.Button("Clear", EditorStyles.miniButton)) ClearSelection(piece);
+                    }
+                    if (crossings.Count > 0)
+                        showClipMarkers = EditorGUILayout.ToggleLeft("Markers", showClipMarkers, GUILayout.Width(74));
                 }
-                else GUILayout.Label("Whole mesh editable", EditorStyles.whiteMiniLabel, GUILayout.Width(122));
-                if (crossings.Count > 0)
-                    showClipMarkers = EditorGUILayout.ToggleLeft("Markers", showClipMarkers, GUILayout.Width(72));
+                if (!string.IsNullOrEmpty(status)) EditorGUILayout.LabelField(status, EditorStyles.wordWrappedMiniLabel);
             }
-
-            if (!repaint)
-                DrawViewport(viewport, overControls);
-            else if (toolbarHelpRect.width > 0)
-            {
-                hoverHelp ??= new GUIStyle(EditorStyles.whiteMiniLabel)
-                {
-                    alignment = TextAnchor.MiddleLeft, wordWrap = true, fontSize = 11
-                };
-                var help = toolbarHelpRect;
-                help.position += toolbar.position;
-                GUI.Label(help, controlHelp ?? toolHelp, hoverHelp);
-            }
+            if (GUI.changed && sceneEditing) SceneView.RepaintAll();
         }
 
+        private Vector2 settingsScroll;
+
+        private void HandleEditKeys()
+        {
+            var input = Event.current;
+            if (input.type == EventType.KeyDown && input.keyCode == KeyCode.Escape)
+            {
+                if (PreviewingPatch) CancelPatchPreview();
+                else if (strokePiece != null) CancelStroke();
+                else if (straighten) ClearSpan();
+                else { HandleBoxShortcut(); return; }
+                input.Use();
+            }
+            if (PreviewingPatch) return;
+            HandleHistoryShortcut();
+            HandleBoxShortcut();
+            HandleSpanShortcut();
+        }
         private void LastControlHelp(string tip) => SetControlHelp(GUILayoutUtility.GetLastRect(), tip);
 
         private void SetControlHelp(Rect rect, string tip)
@@ -411,44 +356,17 @@ namespace MilltinaBreastGenerator
 
         private void DrawToolbar(float width)
         {
-            const float meshWidth = 284, displayWidth = 77, viewsWidth = 350;
-            float fitWidth = frameWeights.Length > 1 ? 415 : 315;
-            bool fitOnFirstRow = width >= meshWidth + fitWidth + displayWidth + 28;
-            bool viewsOnFirstRow = width >= meshWidth + fitWidth + viewsWidth + displayWidth + 42;
-            using (new EditorGUILayout.HorizontalScope())
+            using (new EditorGUILayout.HorizontalScope()) DrawVisibility();
+            if (!EditableFrame)
             {
-                using (new EditorGUILayout.HorizontalScope(GUILayout.Width(meshWidth)))
-                using (new EditorGUI.DisabledScope(PreviewingPatch)) DrawMeshPicker();
-                if (fitOnFirstRow)
-                {
-                    DrawGroupDivider();
-                    DrawFitControls();
-                }
-                GUILayout.FlexibleSpace();
-                if (viewsOnFirstRow)
-                {
-                    DrawGroupDivider();
-                    DrawViews();
-                    GUILayout.FlexibleSpace();
-                    DrawGroupDivider();
-                }
-                if (OverlayButton(new GUIContent("Display ▾", "Middle-drag to pan. Right-drag to look. Scroll to zoom."),
-                    showDisplay, GUILayout.Width(displayWidth)))
-                    showDisplay = !showDisplay;
-            }
-            if (!fitOnFirstRow || !viewsOnFirstRow)
-            {
-                bool shareRow = !fitOnFirstRow && width >= fitWidth + viewsWidth + 14;
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    if (!fitOnFirstRow) DrawFitControls();
-                    if (shareRow) DrawGroupDivider();
-                    if (fitOnFirstRow || shareRow) DrawViews();
+                    EditorGUILayout.LabelField("Inspection only at this weight.", EditorStyles.miniLabel);
+                    float frame = frameWeights[frameWeights.Length - 1];
+                    if (!PreviewingPatch && OverlayButton(new GUIContent($"Go to {frame:g}", "Jump to the last editable frame.")))
+                        SetFitWeight(frame);
                 }
-                if (!fitOnFirstRow && !shareRow)
-                    using (new EditorGUILayout.HorizontalScope()) DrawViews();
             }
-
             DrawRowDivider();
             bool historyOnToolRow = width >= 710;
             using (new EditorGUI.DisabledScope(PreviewingPatch))
@@ -508,7 +426,7 @@ namespace MilltinaBreastGenerator
             if (straighten)
                 using (new EditorGUILayout.HorizontalScope()) DrawSpanSettings();
             if (sculpt && SurfaceBrush)
-                using (new EditorGUILayout.HorizontalScope()) DrawSurfaceBrushSettings();
+                DrawSurfaceBrushSettings(width);
             if (tool == Tool.Clipping && !clippingBrush && crossings.Count > 0)
                 DrawPatchControls();
         }
@@ -544,14 +462,9 @@ namespace MilltinaBreastGenerator
             if (sculpt) return BrushHint();
             if (straighten) return spanPiece == null ? "Click the first attachment point." :
                 spanOffsets == null ? "Click the second attachment point." : "Enter applies the span. Esc clears it.";
-            if (boxMode) return "Drag to select. Shift adds, Ctrl/Cmd subtracts, Alt selects through.";
+            if (boxMode) return pieces[selectedMesh + 1].SelectionCount > 0 ? "Drag Move to reposition the selection." : "Click or drag to select vertices.";
             if (tool == Tool.Clipping) return "Scan the selected mesh against the body and visible garments.";
-            return "Compare the fit or choose an editing tool.";
-        }
-
-        private void DrawFitControls()
-        {
-            using (new EditorGUI.DisabledScope(PreviewingPatch)) DrawWeight(120f);
+            return "Click a visible garment to select it. Choose a tool to edit.";
         }
 
         private void DrawPatchControls()
@@ -565,7 +478,7 @@ namespace MilltinaBreastGenerator
                     if (row != activePatch + 1)
                     {
                         activePatch = row - 1;
-                        if (activePatch >= 0) pan = crossings[activePatch].Point - focus;
+                        if (activePatch >= 0 && editView) editView.pivot = crossings[activePatch].Point;
                         Repaint();
                     }
                     using (new EditorGUI.DisabledScope(activePatch < 0 || !EditableFrame || strokePiece != null))
@@ -599,8 +512,8 @@ namespace MilltinaBreastGenerator
             DrawGroupDivider();
             var rect = GUILayoutUtility.GetRect(0, ControlHeight, GUILayout.ExpandWidth(true));
             if (Event.current.type != EventType.Repaint) return;
-            toolbarHelpRect = rect;
-            toolHelp = hint;
+            hoverHelp ??= new GUIStyle(EditorStyles.whiteMiniLabel) { alignment = TextAnchor.MiddleLeft, wordWrap = true };
+            GUI.Label(rect, controlHelp ?? hint, hoverHelp);
         }
 
         private void DrawVertexSize()
@@ -677,47 +590,15 @@ namespace MilltinaBreastGenerator
             EditorGUILayout.LabelField(label, floatingLabel);
         }
 
-        private void DrawWeight(float width)
+        private void SetFitWeight(float next)
         {
-            ToolbarLabel("Fit", 20);
-            ToolbarLabel($"Body {(previewFit.Reverse ? 100 - weight : weight):g}%", 64);
-            float nextWeight = EditorGUILayout.Slider(weight, 0, Mathf.Max(100, frameWeights[frameWeights.Length - 1]), GUILayout.Width(width), GUILayout.Height(ControlHeight));
-            if (frameWeights.Length > 1)
-            {
-                int index = Array.IndexOf(frameWeights, weight);
-                int selected = EditorGUILayout.Popup(index, Array.ConvertAll(frameWeights, w => $"Frame {w:g}"), GUILayout.Width(90), GUILayout.Height(ControlHeight));
-                if (selected >= 0 && selected != index) nextWeight = frameWeights[selected];
-            }
-            LastControlHelp("Compare the original fit at 0 with the full generated shape at 100.");
-            foreach (int preset in Presets)
-                if (OverlayButton(new GUIContent(preset.ToString(), preset == 0 ? "Show the original fit." :
-                    preset == 50 ? "Check the fit halfway through the change." : "Show the full fit. Sculpting is available here."), preset == weight, GUILayout.Width(37)))
-                    nextWeight = preset;
-            if (nextWeight != weight)
-            {
-                EndStroke();
-                ClearSpan();
-                weight = nextWeight;
-                Bake();
-            }
+            EndStroke();
+            ClearSpan();
+            weight = next;
+            Bake();
+            Repaint();
+            if (sceneEditing) SceneView.RepaintAll();
         }
-
-        private void DrawViews()
-        {
-            for (int i = 0; i < ViewLabels.Length; i++)
-            {
-                string label = i == 1 && viewIndex == 1 ? (leftSide ? "Side: Left" : "Side: Right") : ViewLabels[i];
-                if (!OverlayButton(new GUIContent(label, $"Reset the camera to the {ViewLabels[i].ToLowerInvariant()} view."), i == viewIndex, GUILayout.Width(i == 1 ? 82 : 60)))
-                    continue;
-                pan = Vector3.zero;
-                if (i == 1) leftSide = viewIndex == 1 && !leftSide;
-                viewIndex = i;
-                yaw = i == 1 ? (leftSide ? -90 : 90) : i == 2 ? 180 : 0;
-                elevation = i == 3 ? 90 : i == 4 ? -90 : 0;
-                InvalidateVertexVisibility();
-            }
-        }
-
         private void DrawHistory()
         {
             using (new EditorGUI.DisabledScope(brushUndo.Count == 0 || strokePiece != null))
@@ -728,13 +609,13 @@ namespace MilltinaBreastGenerator
                     MoveHistory(brushRedo, brushUndo);
             using (new EditorGUI.DisabledScope(brushUndo.Count == 0 || strokePiece != null))
                 if (ToolbarButton(new GUIContent("Save Corrections", "Save the previewed fit and edits as restorable meshes."), true, ButtonStyle.Primary, GUILayout.Width(126)))
-                    SaveCorrections();
+                    FinishSaving();
         }
 
         private void DrawEditTools()
         {
             DrawToolButton(Tool.Sculpt, "Sculpt", "Grab, deform, smooth or protect areas of the garment.");
-            DrawToolButton(Tool.Vertices, "Vertex Control", "Drag to select part of the mesh (B), or straighten a span.");
+            DrawToolButton(Tool.Vertices, "Vertex Control", "Click or box-select vertices (B), or straighten a span.");
             DrawToolButton(Tool.Clipping, "Clipping", "Scan or brush clipping on the selected mesh.");
             DrawToolButton(Tool.Restore, "Restore Brush", "Recover the generated fit or original fabric locally.");
             DrawToolButton(Tool.Relax, "Relax", "Even out vertex spacing while holding the garment boundary.");
@@ -765,6 +646,8 @@ namespace MilltinaBreastGenerator
                 Tool.Clipping => Brush.ClearSkin,
                 _ => sculptBrush
             };
+            Repaint();
+            if (sceneEditing) editView.Repaint();
         }
 
         private void SetVertexMode(bool span)
@@ -849,33 +732,44 @@ namespace MilltinaBreastGenerator
             DrawSymmetryToggle("Z", "Mirror across the garment’s front/back midpoint (Z).", 4);
         }
 
-        private void DrawSurfaceBrushSettings()
+        private void DrawSurfaceBrushSettings(float width)
         {
-            GUILayout.Label("Strength", EditorStyles.whiteMiniLabel, GUILayout.Width(51));
-            brushStrength = EditorGUILayout.Slider(brushStrength, .05f, 1f, GUILayout.Width(112));
-            if (brushMode == Brush.ClearSkin)
+            bool wrapReference = brushMode == Brush.ClearSkin && width < 520;
+            using (new EditorGUILayout.HorizontalScope())
             {
-                GUILayout.Label("Gap (mm)", EditorStyles.whiteMiniLabel, GUILayout.Width(53));
-                brushGapMm = EditorGUILayout.Slider(brushGapMm, 0, 10, GUILayout.Width(105));
-                brushReference = SafeBrushReference;
-                var names = new string[pieces.Count - 1];
-                names[0] = "Body";
-                for (int i = 1, row = 1; i < pieces.Count; i++)
-                    if (i != selectedMesh + 1) names[row++] = editableNames[i - 1].text;
-                int current = brushReference > selectedMesh + 1 ? brushReference - 1 : brushReference;
-                int choice = EditorGUILayout.Popup(current, names, GUILayout.Width(115));
-                brushReference = choice > selectedMesh ? choice + 1 : choice;
-                LastControlHelp("Reference surface for the clipping brush.");
+                ToolbarLabel("Strength", 51);
+                BrushStrength = EditorGUILayout.Slider(BrushStrength, .05f, 1f, GUILayout.Width(112));
+                if (brushMode == Brush.ClearSkin)
+                {
+                    ToolbarLabel("Gap (mm)", 53);
+                    brushGapMm = EditorGUILayout.Slider(brushGapMm, 0, 10, GUILayout.Width(105));
+                    if (!wrapReference) DrawClippingReference();
+                }
+                if (brushMode == Brush.Restore)
+                {
+                    restoreOriginal = EditorGUILayout.Popup(restoreOriginal ? 1 : 0,
+                        RestoreTargets, GUILayout.Width(160)) == 1;
+                    LastControlHelp("Recover the generated fit or the original fabric shape.");
+                }
             }
-            if (brushMode == Brush.Restore)
-            {
-                restoreOriginal = EditorGUILayout.Popup(restoreOriginal ? 1 : 0,
-                    RestoreTargets, GUILayout.Width(145)) == 1;
-                LastControlHelp("Restore generated motion or recover the original fabric shape in place.");
-            }
+            if (wrapReference)
+                using (new EditorGUILayout.HorizontalScope()) DrawClippingReference();
         }
 
-        private static readonly string[] RestoreTargets = { "As generated", "Original in place" };
+        private void DrawClippingReference()
+        {
+            brushReference = SafeBrushReference;
+            ToolbarLabel("Against", 43);
+            var names = new string[pieces.Count - 1];
+            names[0] = "Body";
+            for (int i = 1, row = 1; i < pieces.Count; i++)
+                if (i != selectedMesh + 1) names[row++] = editableNames[i - 1].text;
+            int current = brushReference > selectedMesh + 1 ? brushReference - 1 : brushReference;
+            int choice = EditorGUILayout.Popup(current, names, GUILayout.Width(115));
+            if (choice >= 0) brushReference = choice > selectedMesh ? choice + 1 : choice;
+            LastControlHelp("Reference surface for the clipping brush.");
+        }
+        private static readonly string[] RestoreTargets = { "Undo local edits", "Recover original shape" };
         private int SafeBrushReference => brushReference >= pieces.Count || brushReference == selectedMesh + 1 ? 0 : brushReference;
 
         private void DrawSymmetryToggle(string label, string help, int axis)
@@ -892,7 +786,7 @@ namespace MilltinaBreastGenerator
             Brush.ElasticDeform => "Drag the fabric · Nearby vertices follow with a soft falloff",
             Brush.Protect => "Click to protect vertices from transferred movement and corrections",
             Brush.Unprotect => "Click protected vertices to restore their movement",
-            Brush.Restore => "Drag to restore the selected reference inside the brush",
+            Brush.Restore => restoreOriginal ? "Brush to recover the original fabric shape in place." : "Brush over a correction to recover the generated fit.",
             Brush.Relax => "Drag to even out vertex spacing while holding the garment boundary",
             Brush.ClearSkin => "Drag over a poke-through to lift fabric toward the selected surface gap",
             _ => "Left-drag to grab · Alt-grab through skin · Shift-drag for depth · Scroll to resize"
@@ -912,7 +806,6 @@ namespace MilltinaBreastGenerator
                 isolateMesh, GUILayout.Width(52)))
             {
                 isolateMesh = !isolateMesh;
-                viewImage = null;
                 InvalidateVertexVisibility();
                 ClearClipping();
                 status = null;
@@ -929,20 +822,16 @@ namespace MilltinaBreastGenerator
             selectedMesh = selection;
             ClearClipping();
             InvalidateVertexVisibility();
-            if (!selectionHighlight)
-            {
-                var shader = Shader.Find("Hidden/ShapeForge/SelectionHighlight");
-                if (shader)
-                    selectionHighlight = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
-            }
-            selectionHighlightUntil = EditorApplication.timeSinceStartup + 2;
-            viewImage = null;
+            outlinePiece = null;
+            if (!IsVisible(pieces[selectedMesh + 1])) status = "This garment is hidden in Scene View.";
+            meshPulseStarted = EditorApplication.timeSinceStartup;
+            lastScenePulse = -1;
             Repaint();
+            if (sceneEditing) SceneView.RepaintAll();
         }
 
         private bool IsVisible(Piece piece) =>
-            !isolateMesh || piece == pieces[0] || piece == pieces[selectedMesh + 1];
-
+            piece.SceneVisible && (!isolateMesh || piece == pieces[0] || piece == pieces[selectedMesh + 1]);
         private void DrawVisibility()
         {
             EditorGUI.BeginChangeCheck();
@@ -1006,104 +895,30 @@ namespace MilltinaBreastGenerator
                 ApplyDraft(piece, prior);
             }
             ClearSpan();
+            Repaint();
+            if (sceneEditing) SceneView.RepaintAll();
         }
 
-        private void DrawViewport(Rect rect, bool overControls)
+        private void DrawSceneMarkers(Rect rect, bool overControls)
         {
-            if (sculpt && EditableFrame)
-                EditorGUIUtility.AddCursorRect(rect, MouseCursor.MoveArrow);
-            Vector3 horizontal = Quaternion.AngleAxis(yaw, up) * forward;
-            var tilt = Quaternion.AngleAxis(-elevation, Vector3.Cross(up, horizontal));
-            Vector3 direction = tilt * horizontal;
-            var rotation = Quaternion.LookRotation(-direction, tilt * up);
-            if (rect.width <= 0 || rect.height <= 0)
-                return;
-
-            var camera = preview.camera;
-            camera.orthographic = false;
-            camera.fieldOfView = 60f;
-            float distance = size * zoom * Mathf.Max(1, rect.height / rect.width) / Mathf.Tan(30f * Mathf.Deg2Rad);
-            camera.nearClipPlane = Mathf.Max(.0001f, distance * .01f);
-            camera.farClipPlane = distance + size * 12;
-            camera.transform.SetPositionAndRotation(focus + pan + direction * distance, rotation);
-            camera.aspect = rect.width / rect.height;
-            if (!overControls || flying || panning || boxDragging || strokePiece != null)
-                Navigate(rect, rotation, distance);
-            if (Event.current.type != EventType.Repaint)
-                return;
-            // Capture the scene material before entering the isolated preview render.
-            var sceneCamera = SceneView.lastActiveSceneView ? SceneView.lastActiveSceneView.camera : null;
-            var sceneSky = sceneCamera ? sceneCamera.GetComponent<Skybox>() : null;
-            var skyMaterial = sceneSky && sceneSky.material ? sceneSky.material : RenderSettings.skybox;
-            bool showSky = sceneCamera && sceneCamera.clearFlags == CameraClearFlags.Skybox && skyMaterial;
-            var background = sceneCamera ? sceneCamera.backgroundColor : camera.backgroundColor;
-            var sky = showSky ? skyMaterial : null;
-            if (!viewImage || renderedRect != rect || renderedPosition != camera.transform.position ||
-                renderedRotation != rotation || renderedSky != sky || renderedBackground != background ||
-                renderedNear != camera.nearClipPlane || renderedFar != camera.farClipPlane)
-            {
-                using var sample = RenderSample.Auto();
-                preview.BeginPreview(rect, GUIStyle.none);
-                camera.backgroundColor = background;
-                camera.clearFlags = showSky ? CameraClearFlags.Skybox : CameraClearFlags.SolidColor;
-                var previewSky = camera.GetComponent<Skybox>();
-                if (showSky && !previewSky)
-                    previewSky = camera.gameObject.AddComponent<Skybox>();
-                if (previewSky)
-                {
-                    previewSky.enabled = showSky;
-                    previewSky.material = showSky ? skyMaterial : null;
-                }
-                foreach (var piece in pieces)
-                {
-                    if (!IsVisible(piece))
-                        continue;
-                    var materials = piece.Materials;
-                    for (int i = 0; i < Mathf.Min(materials.Length, piece.Baked.subMeshCount); i++)
-                    {
-                        if (materials[i])
-                            preview.DrawMesh(piece.Baked, piece.Renderer.localToWorldMatrix, materials[i], i);
-                    }
-                }
-                if (selectionHighlight && selectionHighlightUntil > EditorApplication.timeSinceStartup)
-                {
-                    var selected = pieces[selectedMesh + 1];
-                    for (int i = 0; i < selected.Baked.subMeshCount; i++)
-                        preview.DrawMesh(selected.Baked, selected.Renderer.localToWorldMatrix, selectionHighlight, i);
-                }
-                preview.Render();
-                viewImage = preview.EndPreview();
-                renderedRect = rect;
-                renderedPosition = camera.transform.position;
-                renderedRotation = rotation;
-                renderedSky = sky;
-                renderedBackground = background;
-                renderedNear = camera.nearClipPlane;
-                renderedFar = camera.farClipPlane;
-            }
-            if (viewImage)
-                GUI.DrawTexture(rect, viewImage, ScaleMode.StretchToFill, false);
             DrawVertexDots(rect);
             DrawSelection(rect);
-            if (!boxMode && (!overControls || strokePiece != null))
-                DrawFootprint(rect);
+            if (boxMode) DrawMoveHandle(rect);
+            if (!boxMode && (!overControls || strokePiece != null)) DrawFootprint(rect);
             DrawSpan(rect);
-            if (!boxMode && !overControls)
-                DrawPickCandidate(rect);
-            if (sculpt && (brushMode is Brush.Protect or Brush.Unprotect))
-                DrawProtection(rect);
+            if (!boxMode && !overControls) DrawPickCandidate(rect);
+            if (sculpt && (brushMode is Brush.Protect or Brush.Unprotect)) DrawProtection(rect);
             if (!showClipMarkers) return;
             for (int i = 0; i < crossings.Count; i++)
             {
                 var marker = crossings[i];
-                var point = camera.WorldToViewportPoint(marker.Point);
+                var point = EditCamera.WorldToViewportPoint(marker.Point);
                 float half = i == activePatch ? 5 : 3;
                 if (point.z > 0 && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1)
                     EditorGUI.DrawRect(new Rect(rect.x + rect.width * point.x - half,
                         rect.y + rect.height * (1 - point.y) - half, half * 2, half * 2), i == activePatch ? Color.yellow : marker.Color);
             }
         }
-
         private void DrawProtection(Rect rect)
         {
             var piece = pieces[selectedMesh + 1];
@@ -1111,39 +926,32 @@ namespace MilltinaBreastGenerator
             for (int i = 0; i < piece.World.Length; i++)
             {
                 if (!piece.Protection[i]) continue;
-                var point = preview.camera.WorldToViewportPoint(piece.World[i]);
+                var point = EditCamera.WorldToViewportPoint(piece.World[i]);
                 if (point.z <= 0 || point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1 ||
                     !VertexVisible(piece, i)) continue;
                 EditorGUI.DrawRect(new Rect(rect.x + rect.width * point.x - 2, rect.y + rect.height * (1 - point.y) - 2, 4, 4), new Color(.36f, .90f, .65f));
             }
         }
 
-        private void Navigate(Rect rect, Quaternion rotation, float distance)
+        private void Navigate(Rect rect, bool overControls)
         {
             int control = GUIUtility.GetControlID(FocusType.Passive, rect);
-            if (Event.current.isMouse)
-                hoverMouse = Event.current.mousePosition;
-            if ((Event.current.isMouse || Event.current.isKey) && hoverThroughBody != Event.current.alt)
-            {
-                hoverThroughBody = Event.current.alt;
-                if (sculpt)
-                    Repaint();
-            }
             var input = Event.current;
-            if (flying && (input.type == EventType.KeyDown || input.type == EventType.KeyUp) &&
-                (input.keyCode == KeyCode.W || input.keyCode == KeyCode.A ||
-                 input.keyCode == KeyCode.S || input.keyCode == KeyCode.D))
-            {
-                if (input.type == EventType.KeyDown)
-                    flyKeys.Add(input.keyCode);
-                else
-                    flyKeys.Remove(input.keyCode);
-                input.Use();
-            }
-
+            if (input.isMouse) hoverMouse = input.mousePosition;
+            if (input.isMouse || input.isKey) hoverThroughBody = input.alt && (!boxMode || input.shift || boxDragging);
+            if (input.type == EventType.Layout) HandleUtility.AddDefaultControl(control);
+            if (overControls && strokePiece == null && !boxDragging) return;
+            // Leave Unity’s camera gestures with the Scene View.
+            if (input.alt && input.button == 0 && strokePiece == null && !input.shift && !boxDragging) return;
             switch (input.GetTypeForControl(control))
             {
+                case EventType.MouseDown when tool == Tool.Inspect && !PreviewingPatch && input.button == 0 && GUIUtility.hotControl == 0 && rect.Contains(input.mousePosition):
+                    int mesh = PickOutfit(SceneRay(rect, input.mousePosition));
+                    if (mesh >= 0) SelectMesh(mesh);
+                    input.Use();
+                    break;
                 case EventType.MouseDown when !PreviewingPatch && boxMode && input.button == 0 && GUIUtility.hotControl == 0 && rect.Contains(input.mousePosition):
+                    if (BeginMoveSelection(rect, input, control)) break;
                     boxDragging = true;
                     boxControl = control;
                     boxStart = boxEnd = input.mousePosition;
@@ -1158,62 +966,43 @@ namespace MilltinaBreastGenerator
                     break;
                 case EventType.MouseUp when boxDragging && input.button == 0 && GUIUtility.hotControl == control:
                     boxEnd = input.mousePosition;
-                    SelectBox(rect, input.shift, input.control || input.command, input.alt);
+                    SelectBox(rect, input.shift, input.control || input.command, hoverThroughBody);
                     CancelBox();
                     input.Use();
                     Repaint();
                     break;
-                case EventType.MouseMove when (sculpt || straighten) && EditableFrame && !flying:
+                case EventType.MouseMove when (sculpt || straighten || boxMode):
                     hoverMouse = input.mousePosition;
                     Repaint();
                     break;
-                case EventType.ScrollWheel when strokePiece != null:
+                case EventType.ScrollWheel when sculpt && EditableFrame && (input.shift || strokePiece != null) && rect.Contains(input.mousePosition):
                     brushRadius = Mathf.Clamp(brushRadius * Mathf.Exp(-input.delta.y * .08f), size * .015f, size * .5f);
-                    if (strokeMoved && !SurfaceBrush)
+                    if (strokeMoved && !PaintBrush)
                         QueueDrag(rect, strokeCurrent, strokeInDepth);
                     input.Use();
                     Repaint();
                     break;
-                case EventType.ScrollWheel when flying:
-                    flySpeed = Mathf.Clamp(flySpeed * Mathf.Exp(-input.delta.y * .08f), .05f, 20f);
-                    input.Use();
-                    break;
-                case EventType.ScrollWheel when rect.Contains(input.mousePosition):
-                    zoom = Mathf.Clamp(zoom * Mathf.Exp(input.delta.y * .05f), .15f, 8f);
-                    input.Use();
-                    Repaint();
-                    break;
-                case EventType.MouseDown when !PreviewingPatch && input.button == 0 && !panning && !flying && rect.Contains(input.mousePosition) &&
+                case EventType.MouseDown when !PreviewingPatch && input.button == 0 && GUIUtility.hotControl == 0 && rect.Contains(input.mousePosition) &&
                     straighten && EditableFrame:
                     SelectSpan(rect, input.mousePosition);
                     input.Use();
                     break;
-                case EventType.MouseDown when input.button == 0 && rect.Contains(input.mousePosition) &&
+                case EventType.MouseDown when !PreviewingPatch && input.button == 0 && GUIUtility.hotControl == 0 && rect.Contains(input.mousePosition) &&
                     sculpt && EditableFrame:
                     if (BeginStroke(rect, input.mousePosition, input.alt || brushMode == Brush.ClearSkin))
                     {
-                        if (SurfaceBrush)
+                        strokeControl = control;
+                        GUIUtility.hotControl = control;
+                        if (PaintBrush)
                         {
-                            strokeControl = control;
-                            GUIUtility.hotControl = control;
                             lastStampPosition = input.mousePosition;
                             StampBrush();
-                        }
-                        else if (brushMode is Brush.Multiply or Brush.Protect or Brush.Unprotect)
-                        {
-                            StampBrush();
-                            EndStroke();
-                        }
-                        else
-                        {
-                            strokeControl = control;
-                            GUIUtility.hotControl = control;
                         }
                     }
                     input.Use();
                     break;
                 case EventType.MouseDrag when strokePiece != null && GUIUtility.hotControl == control:
-                    if (SurfaceBrush)
+                    if (!movingSelection && PaintBrush)
                     {
                         stampQueued = true;
                         stampViewport = rect;
@@ -1229,58 +1018,27 @@ namespace MilltinaBreastGenerator
                     EndStroke();
                     input.Use();
                     break;
-                case EventType.MouseDown when input.button == 2 && GUIUtility.hotControl == 0 && rect.Contains(input.mousePosition):
-                    panning = true;
-                    flyControl = control;
-                    GUIUtility.hotControl = control;
-                    input.Use();
-                    break;
-                case EventType.MouseDrag when panning && GUIUtility.hotControl == control:
-                    float unitsPerPixel = 2f * distance * Mathf.Tan(30f * Mathf.Deg2Rad) / rect.height;
-                    pan += rotation * new Vector3(-input.delta.x, input.delta.y, 0) * unitsPerPixel;
-                    input.Use();
-                    Repaint();
-                    break;
-                case EventType.MouseUp when input.button == 2 && panning && GUIUtility.hotControl == control:
-                    StopFlying();
-                    input.Use();
-                    break;
-                case EventType.MouseDown when input.button == 1 && GUIUtility.hotControl == 0 && rect.Contains(input.mousePosition):
-                    GUIUtility.hotControl = control;
-                    flying = true;
-                    flyControl = control;
-                    flyRotation = rotation;
-                    flyDistance = distance;
-                    lastFlyUpdate = EditorApplication.timeSinceStartup;
-                    input.Use();
-                    break;
-                case EventType.MouseDrag when flying && GUIUtility.hotControl == control:
-                    yaw = Mathf.Repeat(yaw + input.delta.x * .55f, 360);
-                    elevation = Mathf.Clamp(elevation + input.delta.y * .55f, -90, 90);
-                    Vector3 heading = Quaternion.AngleAxis(yaw, up) * forward;
-                    var tilt = Quaternion.AngleAxis(-elevation, Vector3.Cross(up, heading));
-                    var next = Quaternion.LookRotation(-(tilt * heading), tilt * up);
-                    pan += (next * Vector3.forward - rotation * Vector3.forward) * distance;
-                    flyRotation = next;
-                    flyDistance = distance;
-                    viewIndex = -1;
-                    input.Use();
-                    Repaint();
-                    break;
-                case EventType.MouseUp when input.button == 1 && flying && GUIUtility.hotControl == control:
-                    StopFlying();
-                    input.Use();
-                    break;
             }
         }
 
         private void Update()
         {
-            if (selectionHighlightUntil > 0 && EditorApplication.timeSinceStartup >= selectionHighlightUntil)
+            if (sceneEditing)
             {
-                selectionHighlightUntil = 0;
-                viewImage = null;
-                Repaint();
+                if (!editView || pieces.Exists(piece => !piece.Source || !StageUtility.GetStageHandle(piece.Source.gameObject).Equals(StageUtility.GetCurrentStageHandle())))
+                {
+                    Release();
+                    Repaint();
+                    return;
+                }
+                if (strokePiece != null && focusedWindow != editView && focusedWindow != this) CancelStroke();
+                double now = EditorApplication.timeSinceStartup;
+                if (meshPulseStarted >= 0 && now - lastScenePulse >= 1.0 / 30)
+                {
+                    if (now - meshPulseStarted >= .85) meshPulseStarted = -1;
+                    lastScenePulse = now;
+                    editView.Repaint();
+                }
             }
             AdvanceClipping();
             if (stampQueued && strokePiece != null && EditorApplication.timeSinceStartup >= nextDragUpdate)
@@ -1294,45 +1052,14 @@ namespace MilltinaBreastGenerator
                 ApplyDraft(strokePiece, EvaluateDrag());
                 nextDragUpdate = EditorApplication.timeSinceStartup + 1.0 / 30;
             }
-            if (!flying)
-                return;
-            double now = EditorApplication.timeSinceStartup;
-            float elapsed = Mathf.Min(.05f, (float)(now - lastFlyUpdate));
-            lastFlyUpdate = now;
-            var direction = Vector3.zero;
-            if (flyKeys.Contains(KeyCode.W)) direction += Vector3.forward;
-            if (flyKeys.Contains(KeyCode.S)) direction += Vector3.back;
-            if (flyKeys.Contains(KeyCode.A)) direction += Vector3.left;
-            if (flyKeys.Contains(KeyCode.D)) direction += Vector3.right;
-            if (direction == Vector3.zero)
-                return;
-            pan += flyRotation * direction.normalized * (flyDistance * elapsed * flySpeed);
-            Repaint();
         }
-
-        private void OnLostFocus()
-        {
-            StopFlying();
-            CancelBox();
-            EndStroke();
-        }
-
-        private void StopFlying()
-        {
-            if ((flying || panning) && GUIUtility.hotControl == flyControl)
-                GUIUtility.hotControl = 0;
-            panning = false;
-            flying = false;
-            flyKeys.Clear();
-        }
-
         private void HandleBoxShortcut()
         {
             var input = Event.current;
             if (input.type != EventType.KeyDown || EditorGUIUtility.editingTextField || input.control || input.command || input.alt)
                 return;
             if (input.keyCode == KeyCode.B)
-                SelectTool(boxMode ? Tool.Inspect : Tool.Vertices);
+                SelectTool(tool == Tool.Vertices ? Tool.Inspect : Tool.Vertices);
             else if (input.keyCode == KeyCode.Escape && (boxMode || boxDragging || pieces[selectedMesh + 1].Selection != null))
             {
                 if (!boxDragging) ClearSelection(pieces[selectedMesh + 1]);
@@ -1358,15 +1085,25 @@ namespace MilltinaBreastGenerator
             if (piece.BrushWeld == null) BuildBrushGraph(piece);
             var selection = add || subtract ? piece.Selection ?? new bool[piece.World.Length] : new bool[piece.World.Length];
             var box = BoxRect;
-            if (box.width >= 2 && box.height >= 2)
-                for (int i = 0; i < piece.World.Length; i++)
+            bool single = (boxEnd - boxStart).sqrMagnitude < 16;
+            int nearest = -1;
+            float best = Mathf.Pow(Mathf.Max(7, vertexSize + 3), 2);
+            for (int i = 0; i < piece.World.Length; i++)
+            {
+                var point = EditCamera.WorldToViewportPoint(piece.World[i]);
+                var screen = ScreenPoint(viewport, point);
+                if (point.z <= 0 || !viewport.Contains(screen)) continue;
+                if (single)
                 {
-                    var point = preview.camera.WorldToViewportPoint(piece.World[i]);
-                    var screen = new Vector2(viewport.x + point.x * viewport.width, viewport.y + (1 - point.y) * viewport.height);
-                    if (point.z > 0 && viewport.Contains(screen) && box.Contains(screen) &&
-                        (through || VertexVisible(piece, i)))
-                        selection[piece.BrushWeld[i]] = !subtract;
+                    float distance = (screen - boxEnd).sqrMagnitude;
+                    if (distance >= best || (!through && !VertexVisible(piece, i))) continue;
+                    best = distance;
+                    nearest = i;
                 }
+                else if (box.Contains(screen) && (through || VertexVisible(piece, i)))
+                    selection[piece.BrushWeld[i]] = !subtract;
+            }
+            if (nearest >= 0) selection[piece.BrushWeld[nearest]] = !subtract;
             int count = 0;
             foreach (bool selected in selection)
                 if (selected) count++;
@@ -1387,8 +1124,8 @@ namespace MilltinaBreastGenerator
                 for (int i = 0; i < piece.World.Length; i++)
                 {
                     if (!piece.Selection[piece.BrushWeld[i]] || piece.BrushWeld[i] != i) continue;
-                    var point = preview.camera.WorldToViewportPoint(piece.World[i]);
-                    if (point.z <= 0 || point.x < 0 || point.y < 0 || point.x > 1 || point.y > 1 || !VertexVisible(piece, i))
+                    var point = EditCamera.WorldToViewportPoint(piece.World[i]);
+                    if (point.z <= 0 || point.x < 0 || point.y < 0 || point.x > 1 || point.y > 1 || (!hoverThroughBody && !VertexVisible(piece, i)))
                         continue;
                     float half = vertexSize * .5f;
                     EditorGUI.DrawRect(new Rect(viewport.x + point.x * viewport.width - half,
@@ -1420,15 +1157,14 @@ namespace MilltinaBreastGenerator
         private Piece Pick(Rect rect, Vector2 mouse, out Vector3 center, out (int A, int B, int C) face, bool throughBody = false)
         {
             face = default;
-            var ray = preview.camera.ViewportPointToRay(new Vector3((mouse.x - rect.x) / rect.width,
-                1 - (mouse.y - rect.y) / rect.height));
+            var ray = SceneRay(rect, mouse);
             if (selectedMesh + 1 >= pieces.Count)
             {
                 center = default;
                 return null;
             }
             var piece = pieces[selectedMesh + 1];
-            var surface = PickSurface(piece);
+            var surface = IsVisible(piece) ? PickSurface(piece) : null;
             float winding = cullBackfaces ? Mathf.Sign(piece.Renderer.localToWorldMatrix.determinant) : 0f;
             if (surface == null || !surface.Raycast(ray, float.PositiveInfinity, winding, out var hit, out float distance) ||
                 (zTest && IsOccluded(ray, distance, throughBody)))
@@ -1478,11 +1214,16 @@ namespace MilltinaBreastGenerator
         {
             if (!cullBackfaces && !zTest)
                 return true;
-            var origin = preview.camera.transform.position;
-            if (visibilityPiece != piece || !visibilityOrigin.Equals(origin) || visibilityThroughBody != throughBody)
+            var camera = EditCamera;
+            var origin = camera.transform.position;
+            var rotation = camera.transform.rotation;
+            if (visibilityPiece != piece || !visibilityOrigin.Equals(origin) || visibilityThroughBody != throughBody ||
+                visibilityRotation != rotation || visibilityOrthographic != camera.orthographic)
             {
                 visibilityPiece = piece;
                 visibilityOrigin = origin;
+                visibilityRotation = rotation;
+                visibilityOrthographic = camera.orthographic;
                 visibilityThroughBody = throughBody;
                 if (vertexVisibility == null || vertexVisibility.Length != piece.World.Length)
                     vertexVisibility = new sbyte[piece.World.Length];
@@ -1493,9 +1234,15 @@ namespace MilltinaBreastGenerator
             if (vertexVisibility[vertex] == 0)
             {
                 var offset = piece.World[vertex] - origin;
+                var rayOrigin = origin;
+                if (camera.orthographic)
+                {
+                    offset = Vector3.Project(offset, camera.transform.forward);
+                    rayOrigin = piece.World[vertex] - offset;
+                }
                 bool facing = !cullBackfaces || vertex >= piece.WorldNormals.Length ||
                     Vector3.Dot(piece.WorldNormals[vertex], offset) <= 0;
-                bool visible = facing && (!zTest || !IsOccluded(new Ray(origin, offset.normalized), offset.magnitude, throughBody));
+                bool visible = facing && (!zTest || !IsOccluded(new Ray(rayOrigin, offset.normalized), offset.magnitude, throughBody));
                 vertexVisibility[vertex] = visible ? (sbyte)1 : (sbyte)-1;
             }
             return vertexVisibility[vertex] > 0;
@@ -1503,12 +1250,12 @@ namespace MilltinaBreastGenerator
 
         private void DrawPickCandidate(Rect rect)
         {
-            if ((!sculpt && !straighten) || !EditableFrame || flying || panning || strokePiece != null ||
+            if ((!sculpt && !straighten) || !EditableFrame || strokePiece != null ||
                 !rect.Contains(hoverMouse))
                 return;
             if (sculpt || Pick(rect, hoverMouse, out var center, out _, false) == null)
                 return;
-            var point = preview.camera.WorldToViewportPoint(center);
+            var point = EditCamera.WorldToViewportPoint(center);
             float x = rect.x + rect.width * point.x;
             float y = rect.y + rect.height * (1 - point.y);
             EditorGUI.DrawRect(new Rect(x - 5, y - 1, 10, 2), Color.white);
@@ -1649,7 +1396,7 @@ namespace MilltinaBreastGenerator
 
             void Mark(Vector3 world, int size)
             {
-                var screen = preview.camera.WorldToViewportPoint(world);
+                var screen = EditCamera.WorldToViewportPoint(world);
                 if (screen.z > 0 && screen.x >= 0 && screen.x <= 1 && screen.y >= 0 && screen.y <= 1)
                     EditorGUI.DrawRect(new Rect(rect.x + rect.width * screen.x - size * .5f,
                         rect.y + rect.height * (1 - screen.y) - size * .5f, size, size), Color.yellow);
@@ -1658,17 +1405,15 @@ namespace MilltinaBreastGenerator
 
         private void DrawAnchorGuide(Rect rect)
         {
-            var a = preview.camera.WorldToViewportPoint(spanStart);
-            var b = preview.camera.WorldToViewportPoint(spanEnd);
+            var a = EditCamera.WorldToViewportPoint(spanStart);
+            var b = EditCamera.WorldToViewportPoint(spanEnd);
             if (a.z <= 0 || b.z <= 0)
                 return;
-            Handles.BeginGUI();
             var old = Handles.color;
             Handles.color = new Color(1f, .74f, .25f, .85f);
             Handles.DrawDottedLine(new Vector3(rect.x + a.x * rect.width, rect.y + (1 - a.y) * rect.height),
                 new Vector3(rect.x + b.x * rect.width, rect.y + (1 - b.y) * rect.height), 4);
             Handles.color = old;
-            Handles.EndGUI();
         }
 
         private void ApplySpan()
@@ -1699,16 +1444,16 @@ namespace MilltinaBreastGenerator
             if (piece == null)
                 return false;
 
-            strokeStart = CurrentMotion(piece);
-            strokePiece = piece;
+            CaptureStroke(piece);
+            if (brushMode == Brush.Multiply) strokeFalloff = new float[strokeStart.Length];
             strokeThroughBody = throughBody;
             strokeNormals = piece.WorldNormals;
             if (brushMode == Brush.Smooth)
                 strokeSmooth = SmoothMotion(piece, strokeStart);
             strokeMouse = mouse;
-            strokeDepth = preview.camera.WorldToViewportPoint(center).z;
+            strokeDepth = EditCamera.WorldToViewportPoint(center).z;
             strokeCenter = center;
-            PrepareBrushFootprint(piece, center, face, throughBody, SurfaceBrush ? brushRadius : size * .5f);
+            PrepareBrushFootprint(piece, center, face, throughBody, PaintBrush ? brushRadius : size * .5f);
             return true;
         }
 
@@ -1716,6 +1461,7 @@ namespace MilltinaBreastGenerator
             bool throughBody, float reach)
         {
             strokeCenter = center;
+            strokeFace = face;
             strokeBrushes = BrushCopies(piece, center, face, reach);
             strokeVisible = new bool[piece.World.Length];
             for (int i = 0; i < strokeVisible.Length; i++)
@@ -1749,18 +1495,18 @@ namespace MilltinaBreastGenerator
 
         private void DrawVertexDots(Rect rect)
         {
-            if (!straighten || spanOffsets != null || flying || panning || !EditableFrame || selectedMesh + 1 >= pieces.Count)
+            if ((!boxMode && (!straighten || spanOffsets != null || !EditableFrame)) || selectedMesh + 1 >= pieces.Count)
                 return;
             var piece = spanPiece ?? pieces[selectedMesh + 1];
-            var color = new Color(1f, .74f, .25f, .78f);
-            bool throughBody = strokePiece != null ? strokeThroughBody : BrushThroughBody;
+            var color = boxMode ? new Color(.91f, .94f, 1f, .80f) : new Color(1f, .74f, .25f, .78f);
+            bool throughBody = !boxMode && (strokePiece != null ? strokeThroughBody : BrushThroughBody);
             for (int i = 0; i < piece.World.Length; i++)
             {
-                var point = preview.camera.WorldToViewportPoint(piece.World[i]);
+                var point = EditCamera.WorldToViewportPoint(piece.World[i]);
                 if (point.z <= 0 || point.x < 0 || point.y < 0 || point.x > 1 || point.y > 1)
                     continue;
-                if (!VertexVisible(piece, i, throughBody))
-                    continue;
+                if (piece.Selection != null && InSelection(piece, i)) continue;
+                if ((!boxMode || !hoverThroughBody) && !VertexVisible(piece, i, throughBody)) continue;
                 EditorGUI.DrawRect(new Rect(rect.x + rect.width * point.x - vertexSize * .5f,
                     rect.y + rect.height * (1 - point.y) - vertexSize * .5f, vertexSize, vertexSize), color);
             }
@@ -1768,26 +1514,26 @@ namespace MilltinaBreastGenerator
 
         private void DrawFootprint(Rect rect)
         {
-            if (!sculpt || !EditableFrame || flying || panning)
+            if (!sculpt || !EditableFrame)
                 return;
 
             if (strokePiece == null && !rect.Contains(hoverMouse))
                 return;
             var center = strokeCenter;
-            (int A, int B, int C) face = default;
+            (int A, int B, int C) face = strokeFace;
             bool throughBody = strokePiece != null ? strokeThroughBody : BrushThroughBody;
             var piece = strokePiece ?? Pick(rect, hoverMouse, out center, out face, throughBody);
             if (piece == null)
                 return;
             var brushes = strokeBrushes ?? GetHoverBrushes(piece, center, face);
 
-            var screen = preview.camera.WorldToViewportPoint(center);
+            var screen = EditCamera.WorldToViewportPoint(center);
             if (screen.z > 0)
             {
                 var cursor = new Vector2(rect.x + rect.width * screen.x, rect.y + rect.height * (1 - screen.y));
-                float radius = brushRadius * rect.height / (2f * screen.z * Mathf.Tan(30f * Mathf.Deg2Rad));
+                float height = EditCamera.orthographic ? EditCamera.orthographicSize * 2 : 2f * screen.z * Mathf.Tan(EditCamera.fieldOfView * Mathf.Deg2Rad / 2);
+                float radius = brushRadius * rect.height / height;
                 GUI.BeginClip(rect);
-                Handles.BeginGUI();
                 Color original = Handles.color;
                 Handles.color = strokePiece != null ? new Color(1f, .7f, .2f, .9f) : new Color(.2f, .65f, 1f, .9f);
                 var circle = new Vector3[49];
@@ -1798,13 +1544,13 @@ namespace MilltinaBreastGenerator
                 }
                 Handles.DrawAAPolyLine(2f, circle);
                 Handles.color = original;
-                Handles.EndGUI();
                 GUI.EndClip();
             }
 
+            if (brushMode == Brush.ClearSkin) DrawClippingArrow(rect, piece, center, face);
             for (int i = 0; i < piece.World.Length; i++)
             {
-                if (!InSelection(piece, i)) continue;
+                if (!InSelection(piece, i) || (piece.Protection != null && piece.Protection[i] && brushMode != Brush.Unprotect)) continue;
                 float distance = float.PositiveInfinity;
                 bool mirrored = false;
                 foreach (var brush in brushes)
@@ -1816,10 +1562,12 @@ namespace MilltinaBreastGenerator
                 if (distance >= brushRadius || (!mirrored && (strokePiece != null
                     ? !strokeVisible[piece.BrushWeld[i]] : !VertexVisible(piece, piece.BrushWeld[i], throughBody))))
                     continue;
-                var point = preview.camera.WorldToViewportPoint(piece.World[i]);
+                var point = EditCamera.WorldToViewportPoint(piece.World[i]);
                 if (point.z <= 0 || point.x < 0 || point.x > 1 || point.y < 0 || point.y > 1)
                     continue;
-                float alpha = Mathf.Lerp(.2f, 1f, 1f - distance / brushRadius);
+                float remaining = 1f - distance / brushRadius;
+                float influence = brushMode == Brush.ElasticDeform ? remaining * remaining * remaining * remaining * (5f - 4f * remaining) : Mathf.SmoothStep(0, 1, remaining);
+                float alpha = Mathf.Lerp(.14f, .92f, influence);
                 EditorGUI.DrawRect(new Rect(rect.x + rect.width * point.x - vertexSize * .5f,
                     rect.y + rect.height * (1 - point.y) - vertexSize * .5f, vertexSize, vertexSize), mirrored ? new Color(1f, .65f, .22f, alpha) : new Color(.2f, .65f, 1f, alpha));
             }
@@ -1968,10 +1716,13 @@ namespace MilltinaBreastGenerator
         {
             using var sample = BrushSample.Auto();
             var delta = strokeCurrent - strokeMouse;
-            float unitsPerPixel = 2f * strokeDepth * Mathf.Tan(30f * Mathf.Deg2Rad) / dragHeight;
-            var camera = preview.camera.transform;
+            float unitsPerPixel = 2f * strokeDepth * Mathf.Tan(EditCamera.fieldOfView * Mathf.Deg2Rad / 2) / dragHeight;
+            if (EditCamera.orthographic) unitsPerPixel = EditCamera.orthographicSize * 2 / dragHeight;
+            var camera = EditCamera.transform;
             var world = strokeInDepth ? -camera.forward * delta.y :
                 camera.right * delta.x - camera.up * delta.y;
+            if (movingSelection)
+                return MoveSelectedVertices(strokePiece, strokeStart, world * unitsPerPixel);
             var avatar = SymmetryFrame;
             var step = avatar.worldToLocalMatrix.MultiplyVector(world * unitsPerPixel);
             var avatarToLocal = strokePiece.Renderer.worldToLocalMatrix * avatar.localToWorldMatrix;
@@ -2068,9 +1819,8 @@ namespace MilltinaBreastGenerator
                 }
                 if (changed)
                 {
-                    brushUndo.Push((strokePiece, weight, null, prior));
-                    brushRedo.Clear();
                     ApplyProtection(strokePiece, mask);
+                    strokeMoved = true;
                 }
                 return;
             }
@@ -2090,7 +1840,10 @@ namespace MilltinaBreastGenerator
             else if (brushMode == Brush.Multiply)
             {
                 for (int i = 0; i < motion.Length; i++)
-                    motion[i] *= Mathf.Lerp(1f, transferMultiplier, falloff[i]);
+                {
+                    strokeFalloff[i] = Mathf.Max(strokeFalloff[i], falloff[i]);
+                    motion[i] = strokeStart[i] * Mathf.Lerp(1f, transferMultiplier, strokeFalloff[i]);
+                }
             }
             else
             {
@@ -2158,12 +1911,7 @@ namespace MilltinaBreastGenerator
             void Sample(int a, int b, int c, Vector3 normal)
             {
                 var point = (piece.World[a] + piece.World[b] + piece.World[c]) / 3f;
-                if (!skin.FindClosest(point, radius, out var face, out _, out var offset))
-                    return;
-                var outward = skin.Normal(face) * winding;
-                float gap = Vector3.Dot(outward, offset);
-                if (gap >= padding || Mathf.Abs(gap) < offset.magnitude * .8f || Vector3.Dot(normal, outward) < .5f)
-                    return;
+                if (!TryClearanceContact(skin, winding, point, normal, radius, padding, out var outward, out float gap)) return;
                 float influence = (falloff[a] + falloff[b] + falloff[c]) / 3f;
                 var correction = outward * (Mathf.Min(padding - gap, radius * .35f) * influence * strength);
                 Store(a);
@@ -2179,32 +1927,70 @@ namespace MilltinaBreastGenerator
             }
         }
 
+        private static bool TryClearanceContact(ShapeTransfer.TriangleSurface reference, float winding,
+            Vector3 point, Vector3 normal, float radius, float padding, out Vector3 outward, out float gap)
+        {
+            outward = default;
+            gap = 0;
+            if (!reference.FindClosest(point, radius, out var face, out _, out var offset)) return false;
+            outward = reference.Normal(face) * winding;
+            gap = Vector3.Dot(outward, offset);
+            return gap < padding && Mathf.Abs(gap) >= offset.magnitude * .8f && Vector3.Dot(normal, outward) >= .5f;
+        }
+
         private void EndStroke(bool rebake = true)
         {
             if (rebake && stampQueued && strokePiece != null) ApplyQueuedStamp();
-            stampQueued = false;
-            if (strokePiece != null && GUIUtility.hotControl == strokeControl)
-                GUIUtility.hotControl = 0;
             var piece = strokePiece;
             var final = rebake && pendingDrag && piece != null ? EvaluateDrag() : piece?.Draft;
-            strokePiece = null;
-            if (strokeMoved && piece != null)
+            bool maskStroke = !movingSelection && (brushMode is Brush.Protect or Brush.Unprotect);
+            bool changed = strokeMoved && piece != null;
+            if (changed)
             {
-                brushUndo.Push((piece, weight, strokeStart, null));
+                brushUndo.Push(maskStroke ? (piece, weight, null, priorProtection) : (piece, weight, strokeStart, null));
                 brushRedo.Clear();
-                if (rebake && preview != null && final != null)
-                    ApplyDraft(piece, final);
             }
-            pendingDrag = false;
+            ResetStroke();
+            if (rebake && changed && preview != null && final != null)
+            {
+                if (maskStroke) RefreshDraft(piece, true);
+                else ApplyDraft(piece, final);
+            }
+        }
+
+        private void ResetStroke()
+        {
+            if (strokePiece != null && GUIUtility.hotControl == strokeControl) GUIUtility.hotControl = 0;
+            strokePiece = null;
+            stampQueued = pendingDrag = strokeMoved = movingSelection = false;
             nextDragUpdate = 0;
-            strokeMoved = false;
-            strokeStart = null;
+            strokeStart = priorCorrection = priorDraft = null;
+            priorProtection = null;
+            strokeFalloff = null;
             strokeBrushes = null;
             strokeVisible = null;
             strokeNormals = null;
             strokeSmooth = null;
         }
 
+        private void CancelStroke()
+        {
+            var piece = strokePiece;
+            if (piece == null) return;
+            if (piece.Draft != priorDraft || piece.Protection != priorProtection)
+            {
+                previewFit.SetCorrection(piece.Source, weight, priorCorrection);
+                piece.Protection = priorProtection;
+                previewFit.SetProtection(piece.Source, priorProtection);
+                RefreshDraft(piece, true);
+                piece.Draft = priorDraft;
+                unsavedEdits = hasUnsavedChanges = priorUnsaved;
+            }
+            ResetStroke();
+            status = "Stroke canceled.";
+            Repaint();
+            if (sceneEditing) SceneView.RepaintAll();
+        }
         private void RestoreInPlace(Piece piece, float[] falloff, Vector3[] motion)
         {
             if (piece.RestWorld == null)
@@ -2252,7 +2038,7 @@ namespace MilltinaBreastGenerator
                     center += piece.World[edge.Target];
                 var point = piece.World[i];
                 var shift = PreviewBrushGeometry.RelaxShift(point, center / neighbors.Count,
-                    piece.WorldNormals[i], brushRadius * .12f, falloff[i] * brushStrength);
+                    piece.WorldNormals[i], brushRadius * .12f, falloff[i] * relaxStrength);
                 if (skin != null && skin.FindClosest(point + shift, brushRadius, out var face, out _, out var gap))
                 {
                     var normal = skin.Normal(face) * skinWinding;
@@ -2272,7 +2058,7 @@ namespace MilltinaBreastGenerator
         {
             piece.Protection = mask;
             previewFit.SetProtection(piece.Source, mask);
-            RefreshDraft(piece, true);
+            RefreshDraft(piece, strokePiece != piece);
         }
 
         private void ApplyDraft(Piece piece, Vector3[] deltas)
@@ -2291,6 +2077,7 @@ namespace MilltinaBreastGenerator
             DestroyImmediate(previous);
             piece.Draft = CurrentMotion(piece);
             unsavedEdits = true;
+            hasUnsavedChanges = true;
             if (strokePiece == piece)
             {
                 ClearClipping();
@@ -2335,7 +2122,7 @@ namespace MilltinaBreastGenerator
             foreach (var result in results)
                 messages.Add(result.Message);
             status = string.Join("\n", messages);
-            unsavedEdits = Array.Exists(results, result => result.Failed);
+            unsavedEdits = hasUnsavedChanges = Array.Exists(results, result => result.Failed);
         }
 
         private void ClearClipping()
@@ -2655,19 +2442,15 @@ namespace MilltinaBreastGenerator
 
         private void Release()
         {
-            StopFlying();
+            EndSceneEditing();
             CancelBox();
             EndStroke(rebake: false);
             CancelPatchPreview(rebake: false);
             ClearClipping();
             previewFit = null;
             ClearSpan();
-            viewImage = null;
             preview?.Cleanup();
             preview = null;
-            if (selectionHighlight) DestroyImmediate(selectionHighlight);
-            selectionHighlight = null;
-            selectionHighlightUntil = 0;
             foreach (var piece in pieces)
                 DestroyImmediate(piece.Baked);
             pieces.Clear();
@@ -2675,7 +2458,7 @@ namespace MilltinaBreastGenerator
             crossings.Clear();
             brushUndo.Clear();
             brushRedo.Clear();
-            unsavedEdits = false;
+            unsavedEdits = hasUnsavedChanges = false;
             foreach (var mesh in generated)
                 DestroyImmediate(mesh);
             generated.Clear();

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Moved fit editing into Unity’s Scene View with an Edit Mode badge, fit controls and dockable Edit Settings.
+- Added click-to-pick with a fading silhouette, visible vertices, click and box selection, and a selection Move handle. Brushes preview their reach and can cancel the current stroke.
+
 - Added toolbar borders, group separators and aligned controls to match the Fit Editor layout.
 
 - Renamed Preview to Fit Editor. The outfit mesh picker leads the top row, tool help sits beside the active settings, and Sculpt, Vertex Control, Clipping, Restore Brush and Relax have dedicated tabs.

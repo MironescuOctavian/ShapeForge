@@ -28,9 +28,9 @@ In Unity, choose **Assets → Import Package → Custom Package**, select the pa
 
 1. Select the **Body Mesh**, **Outfit**, and **Source Shape**. You can drag a clothing object or the parent of several pieces from the Hierarchy.
 2. Check the eligible pieces you want to fit. Open **Advanced** to choose a transfer method.
-3. Click **Edit** to open the Fit Editor. Choose an outfit mesh at the top left, then compare **0**, **50**, and **100**. In **Clipping**, scan the selected mesh, choose a patch, and preview a fix before applying it.
-4. Use **Sculpt**, **Clipping Brush**, **Restore Brush**, or **Relax** to correct the fit. In **Vertex Control** (**B**), drag to select, hold **Shift** to add or **Ctrl/Cmd** to subtract, or use **Straighten Span** for straps. Press **Esc** to clear a selection.
-5. Use **Generate** for the automatic fit or **Save Corrections** after editing the preview. Use **Restore** to remove generated shapes.
+3. Click **Edit**. In Unity’s Scene View, look for **ShapeForge Edit Mode**, then click a visible garment or choose it in the mesh menu. Compare fit at **0**, **50**, and **100**.
+4. Open **Settings** for brush options and clipping patches. In **Vertex Control** (**B**), click or box-select vertices, then drag **Move**. Hold **Shift** to add or **Ctrl/Cmd** to subtract. Use **Straighten Span** for straps. For brushes, **Shift-scroll** resizes the brush and **Esc** cancels an active stroke.
+5. Click **Save Corrections** or **Discard** to end Edit Mode. **Generate** applies the automatic fit, and **Restore** removes generated shapes.
 
 ## Unity interface
 

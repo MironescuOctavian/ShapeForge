@@ -9,7 +9,7 @@ namespace MilltinaBreastGenerator
     internal sealed class GeneratorWindow : EditorWindow
     {
         private const string Description =
-            "Choose an outfit and a body shape. Preview the checked pieces, then Generate to save the fit. Hover over a control for help.";
+            "Choose an outfit and a body shape. Click Edit to inspect the checked pieces in Scene View, or Generate to save the fit. Hover over a control for help.";
 
         private const string OutfitSessionKey = "Octa.OutfitBlendshapeGenerator.Outfit";
         [SerializeField] private TransferMethod transferMethod;
@@ -72,7 +72,7 @@ namespace MilltinaBreastGenerator
         }
 
         [MenuItem("Tools/ShapeForge/Blendshape Generator")]
-        private static void Open()
+        internal static void Open()
         {
             var window = GetWindow<GeneratorWindow>("ShapeForge", true, typeof(SceneView));
             window.RecoverOutfit();
