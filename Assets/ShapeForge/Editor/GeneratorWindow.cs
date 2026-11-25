@@ -186,10 +186,11 @@ namespace ShapeForge
             base.DiscardChanges();
         }
 
-        internal void StartEdit(SkinnedMeshRenderer body, SkinnedMeshRenderer[] outfits, string shape, TransferMethod method)
+        internal void StartEdit(SkinnedMeshRenderer body, SkinnedMeshRenderer[] outfits, string shape, TransferMethod method,
+            SkinnedMeshRenderer[] existing = null)
         {
             editSession ??= new FitPreview(this);
-            if (!editSession.Active) editSession.Start(body, outfits, shape, method);
+            if (!editSession.Active) editSession.Start(body, outfits, shape, method, existing: existing);
             ShowEditSettings();
         }
 
@@ -387,7 +388,8 @@ namespace ShapeForge
 
                     if (!editing && GUILayout.Button(new GUIContent("Edit", "Go to Edit Settings in ShapeForge."), GUILayout.Height(34), GUILayout.Width(actionWidth)))
                     {
-                        StartEdit(body, selected.Select(p => p.Renderer).ToArray(), sourceShapeName, transferMethod);
+                        StartEdit(body, selected.Select(p => p.Renderer).ToArray(), sourceShapeName, transferMethod,
+                            pieces.Where(p => p.HasShape).Select(p => p.Renderer).ToArray());
                         GUIUtility.ExitGUI();
                     }
                     bool generate;

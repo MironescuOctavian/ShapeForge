@@ -47,6 +47,8 @@ namespace ShapeForge
 
         private readonly List<Piece> pieces = new();
         private readonly List<Mesh> generated = new();
+        // Outfit pieces that already carry the shape are not edited, but they follow the preview weight so they match the edited pieces.
+        private readonly List<(SkinnedMeshRenderer Renderer, int Index, float Original)> companions = new();
         private PreviewRenderUtility preview;
         private Vector3 focus;
         private float size;
@@ -209,12 +211,14 @@ namespace ShapeForge
         internal FitPreview(GeneratorWindow host = null) => this.host = host;
 
         internal void Start(SkinnedMeshRenderer body, SkinnedMeshRenderer[] outfits, string shape,
-            TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral)
+            TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral,
+            SkinnedMeshRenderer[] existing = null)
         {
             settingsScroll = Vector2.zero;
             try
             {
                 Build(body, outfits, shape, method, mode);
+                if (Active) TrackCompanions(existing);
                 SelectTool(Tool.Inspect);
                 if (!Application.isBatchMode && Active)
                 {
@@ -328,6 +332,32 @@ namespace ShapeForge
             ClearClipping();
             foreach (var piece in pieces)
                 BakePiece(piece);
+            SyncCompanions();
+        }
+
+        private void TrackCompanions(SkinnedMeshRenderer[] existing)
+        {
+            if (existing == null) return;
+            foreach (var renderer in existing)
+            {
+                int index = renderer && renderer.sharedMesh ? renderer.sharedMesh.GetBlendShapeIndex(targetShape) : -1;
+                if (index < 0 || pieces.Exists(piece => piece.Source == renderer)) continue;
+                companions.Add((renderer, index, renderer.GetBlendShapeWeight(index)));
+            }
+            SyncCompanions();
+        }
+
+        private void SyncCompanions()
+        {
+            foreach (var companion in companions)
+                if (companion.Renderer) companion.Renderer.SetBlendShapeWeight(companion.Index, weight);
+        }
+
+        private void RestoreCompanions()
+        {
+            foreach (var companion in companions)
+                if (companion.Renderer) companion.Renderer.SetBlendShapeWeight(companion.Index, companion.Original);
+            companions.Clear();
         }
 
         private void BakePiece(Piece piece)
@@ -2698,6 +2728,7 @@ namespace ShapeForge
         internal void Release()
         {
             EndSceneEditing();
+            RestoreCompanions();
             CancelBox();
             EndStroke(rebake: false);
             CancelPatchPreview(rebake: false);
