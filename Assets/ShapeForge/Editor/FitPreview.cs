@@ -382,15 +382,20 @@ namespace ShapeForge
             {
                 using (new EditorGUILayout.HorizontalScope())
                 {
+                    using (new EditorGUILayout.VerticalScope(GUILayout.Width(30)))
+                    {
+                        GUILayout.Space(4);
+                        if (OverlayButton(new GUIContent("‹", "Back: return to the Generator and keep the current draft."), false,
+                            GUILayout.Width(26)))
+                        {
+                            host.ShowGenerator();
+                            GUIUtility.ExitGUI();
+                        }
+                    }
                     using (new EditorGUILayout.VerticalScope(GUILayout.ExpandWidth(true)))
                     {
                         GUILayout.Label("Edit fit", EditorStyles.largeLabel);
                         GUILayout.Label($"{(body ? body.name : "Body")} / {targetShape}", EditorStyles.miniLabel);
-                    }
-                    if (OverlayButton(new GUIContent("Back", "Return to the Generator and keep the current draft."), false, GUILayout.Width(52)))
-                    {
-                        host.ShowGenerator();
-                        GUIUtility.ExitGUI();
                     }
                     if (Active)
                     {
@@ -2354,7 +2359,7 @@ namespace ShapeForge
         private void RefreshDraft(Piece piece, bool calculateShading)
         {
             var previous = piece.Renderer.sharedMesh;
-            var mesh = previewFit.Build(piece.Source, out _, calculateShading: calculateShading);
+            var mesh = previewFit.Build(piece.Source, out _, calculateShading: calculateShading, shadingSource: previous);
             generated.Remove(previous);
             generated.Add(mesh);
             SwapPreviewMesh(piece, mesh);

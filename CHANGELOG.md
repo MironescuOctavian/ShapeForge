@@ -2,8 +2,11 @@
 
 ## Unreleased
 
-- Much more accurate automatic fits. On the synthetic suite the gap error 95th percentile fell from 2.3 mm to 0.06 mm and the full 3D error against the ideal fit from 3.5 mm to 0.5 mm, with smoother fabric. Straight edge loops lying on the body are no longer flattened toward their ends (straps that bridge a gap still are). Garment offsets turn fully with the body surface. Confident contacts hold their transferred motion and only uncertain matches are smoothed.
-- Small closed parts such as buttons and rings now rotate with the body as well as move, and stay rigid. Which parts qualify depends on their size and how much they would bend, not on the shape's strength.
+- Fixed rough fits on real avatars. An earlier change in this release tuned the solver on ideal test bodies and made real fits two to five times bumpier (Milltina no-bra: Belt Chest roughness p95 2.1 mm before, 10.3 mm after). The solver smooths strongly again, and real fits are now as smooth as before or smoother (Belt Chest 1.7 mm, Leotard 0.8 mm) and closer to an authored no-bra shape. Garment offsets still turn fully with the body surface.
+- Small closed parts such as buttons, rings and studs now rotate with the body as well as move, and stay rigid. Which parts qualify depends on their size and how much they would bend, not on the shape's strength.
+- Grabbing in Edit mode keeps the cloth's shading instead of flashing back to rest shading during the drag.
+- Edit mode drives outfit pieces that already have the shape to the preview weight. Added Sync Existing Shapes to add MA Blendshape Sync bindings for shapes an outfit already has.
+- The Back button in Edit fit is a small arrow left of the title. Generator titles and hints keep their text color after a reload.
 - Removed avatar-specific defaults: there is no built-in source shape name, and body masks are detected by how strongly a shape collapses or shrinks faces rather than by one avatar's shape names.
 - FitQualityCheck adds a shrinking shape, a torso, cleavage, a strap bridge and a button case, and scores sideways drift against the ideal fit.
 - Improved fit accuracy: reach now follows the size of the moving region so loose fabric follows subtle shapes, the normal offset uses smooth normals, the final clearance pass repeats, seams weld within a small tolerance, and a vertex that sank into the front of a thin body part no longer follows the surface behind it.

@@ -489,18 +489,31 @@ namespace ShapeForge
         internal static Mesh BuildMesh(Mesh outfit, Vector3[] vertices, Vector3[] deltas, string shape)
             => BuildMesh(outfit, vertices, new[] { (100f, deltas) }, shape);
 
-        internal static Mesh BuildMesh(Mesh outfit, Vector3[] vertices, IEnumerable<(float Weight, Vector3[] Motion)> frames, string shape, bool calculateShading = true)
+        internal static Mesh BuildMesh(Mesh outfit, Vector3[] vertices, IEnumerable<(float Weight, Vector3[] Motion)> frames, string shape, bool calculateShading = true,
+            Mesh shadingSource = null)
         {
             var copy = UnityEngine.Object.Instantiate(outfit);
             try
             {
                 copy.name = outfit.name + " - " + shape;
                 var bounds = copy.bounds;
+                // Without fresh shading, reuse the previous build's normal and tangent deltas so the surface does not
+                // flash back to rest shading during an interactive stroke.
+                int previous = !calculateShading && shadingSource && shadingSource.vertexCount == vertices.Length
+                    ? shadingSource.GetBlendShapeIndex(shape) : -1;
+                int frame = 0;
                 foreach (var (weight, deltas) in frames)
                 {
                     Vector3[] normalDeltas = null, tangentDeltas = null;
                     if (calculateShading)
                         CalculateShading(outfit, vertices, deltas, out normalDeltas, out tangentDeltas);
+                    else if (previous >= 0 && frame < shadingSource.GetBlendShapeFrameCount(previous))
+                    {
+                        normalDeltas = new Vector3[vertices.Length];
+                        tangentDeltas = new Vector3[vertices.Length];
+                        shadingSource.GetBlendShapeFrameVertices(previous, frame, new Vector3[vertices.Length], normalDeltas, tangentDeltas);
+                    }
+                    frame++;
                     copy.AddBlendShapeFrame(shape, weight, deltas, normalDeltas, tangentDeltas);
                     for (int i = 0; i < vertices.Length; i++)
                         bounds.Encapsulate(vertices[i] + deltas[i]);
@@ -646,8 +659,8 @@ namespace ShapeForge
         }
 
         // Small closed parts such as rings, studs and buttons keep their shape. Each takes the rigid motion, rotation
-        // included, that best matches its transferred motion. A part that this would bend by more than a few percent
-        // of its size, or that is large next to the moving body region, keeps its flexible fit.
+        // included, that best matches its transferred motion. A part that this would bend by more than about a third of its
+        // size, or that is large next to the moving body region, keeps its flexible fit.
         private static int PreserveCompactDetails(Vector3[] vertices, Vector3[] deltas, int[] islands, bool[] closed,
             Matrix4x4 outfitToBody, float regionSize)
         {
@@ -708,7 +721,7 @@ namespace ShapeForge
                 float deviation = 0;
                 for (int k = 0; k < rest.Count; k++)
                     deviation = Mathf.Max(deviation, (rotation * (rest[k] - restCenter) + movedCenter - moved[k]).magnitude);
-                if (deviation <= size * 1e-4f || deviation > size * .15f)
+                if (deviation <= size * 1e-4f || deviation > size * .3f)
                     continue;
 
                 foreach (int i in section)
@@ -850,22 +863,6 @@ namespace ShapeForge
             var neighbors = new List<(int Index, float Weight, Vector3 Direction)>[positions.Length];
             var totals = new float[positions.Length];
             var edges = new HashSet<(int, int)>();
-            // Inverse-length weights, floored at a fraction of this garment's typical edge so near-duplicate vertices
-            // cannot dominate their neighbors.
-            float edgeSum = 0;
-            int edgeCount = 0;
-            for (int section = 0; section < mesh.subMeshCount; section++)
-            {
-                if (mesh.GetTopology(section) != MeshTopology.Triangles)
-                    continue;
-                var indices = mesh.GetTriangles(section);
-                for (int k = 0; k < indices.Length; k++)
-                {
-                    edgeSum += toBody.MultiplyVector(positions[indices[k]] - positions[indices[k - k % 3 + (k + 1) % 3]]).magnitude;
-                    edgeCount++;
-                }
-            }
-            float shortest = edgeCount > 0 ? edgeSum / edgeCount * .25f : 0;
 
             for (int section = 0; section < mesh.subMeshCount; section++)
             {
@@ -882,7 +879,7 @@ namespace ShapeForge
             }
 
             var target = Array.ConvertAll(deltas, toBody.MultiplyVector);
-            var spans = FindStraightSpans(Array.ConvertAll(positions, toBody.MultiplyVector), neighbors, proximity, scale, confidence);
+            var spans = FindStraightSpans(Array.ConvertAll(positions, toBody.MultiplyVector), neighbors, proximity, scale);
             var current = (Vector3[])target.Clone();
             var next = (Vector3[])target.Clone();
             // Relax displacement rather than positions to retain the rest shape of folds.
@@ -904,15 +901,17 @@ namespace ShapeForge
                         mean /= totals[i];
                         var residual = target[i] - mean;
                         float contact = target[i].sqrMagnitude > 0 ? confidence[i] : 0;
-                        // A confident contact holds its transferred motion. Uncertain matches lean on their neighbors.
-                        var motion = mean + residual * Mathf.Lerp(.12f, 1f, contact);
+                        // Contacts constrain clearance more strongly than tangential slip. A low data weight keeps
+                        // per-vertex projection noise on real meshes from reaching the surface.
+                        var motion = mean + residual * Mathf.Lerp(.015f, .060f, contact);
+                        motion += normals[i] * (Vector3.Dot(residual, normals[i]) * contact * .14f);
                         // A straight run can span empty space. Its two ends constrain bending
                         // even when its midpoint projects onto a different part of the body.
                         var span = spans[i];
                         if (span.Strength > 0)
                         {
                             var alongSpan = Vector3.Lerp(read[span.A], read[span.B], span.T);
-                            motion = Vector3.Lerp(motion, alongSpan, span.Strength * .65f);
+                            motion = Vector3.Lerp(motion, alongSpan, span.Strength * Mathf.Lerp(.65f, .10f, contact));
                         }
                         write[i] = Vector3.Lerp(target[i], motion, proximity[i]);
                         chunkChange = Mathf.Max(chunkChange, (write[i] - read[i]).sqrMagnitude);
@@ -931,7 +930,7 @@ namespace ShapeForge
                 var span = spans[i];
                 if (span.Strength > 0)
                     next[i] = Vector3.Lerp(current[i], Vector3.Lerp(current[span.A], current[span.B], span.T),
-                        span.Strength);
+                        span.Strength * Mathf.Lerp(1f, .35f, confidence[i]));
             }
             (current, next) = (next, current);
 
@@ -950,7 +949,7 @@ namespace ShapeForge
                         var mean = Vector3.zero;
                         foreach (var edge in neighbors[i])
                             mean += read[edge.Index] * edge.Weight;
-                        write[i] = Vector3.Lerp(read[i], mean / totals[i], .55f * (1 - confidence[i]));
+                        write[i] = Vector3.Lerp(read[i], mean / totals[i], .55f);
                     }
                 });
                 (current, next) = (next, current);
@@ -1047,7 +1046,7 @@ namespace ShapeForge
                 var direction = toBody.MultiplyVector(positions[b] - positions[a]);
                 float length = direction.magnitude;
                 direction = length > 0 ? direction / length : Vector3.zero;
-                float weight = 1f / Mathf.Max(length, shortest, 1e-9f);
+                float weight = 1f / Mathf.Max(length, scale * .06f);
                 (neighbors[a] ??= new List<(int, float, Vector3)>()).Add((b, weight, direction));
                 (neighbors[b] ??= new List<(int, float, Vector3)>()).Add((a, weight, -direction));
                 totals[a] += weight;
@@ -1065,14 +1064,14 @@ namespace ShapeForge
         }
 
         // A straight run of garment edges that crosses empty space, such as a strap over a valley, should follow the
-        // chord between its ends. A vertex in confident body contact is supported where it is, so it gets no span.
+        // chord between its ends. Confident contacts lean on it less during relaxation.
         private static (int A, int B, float T, float Strength)[] FindStraightSpans(Vector3[] rest,
-            List<(int Index, float Weight, Vector3 Direction)>[] neighbors, float[] proximity, float scale, float[] confidence)
+            List<(int Index, float Weight, Vector3 Direction)>[] neighbors, float[] proximity, float scale)
         {
             var spans = new (int A, int B, float T, float Strength)[rest.Length];
             for (int i = 0; i < spans.Length; i++)
             {
-                if (neighbors[i] == null || proximity[i] <= 0 || confidence[i] >= 1)
+                if (neighbors[i] == null || proximity[i] <= 0)
                     continue;
                 float longest = scale * .65f;
                 foreach (var edge in neighbors[i])
@@ -1091,7 +1090,7 @@ namespace ShapeForge
                         continue;
                     longest = length;
                     float support = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(scale * .03f, scale * .28f, Mathf.Min(left, right)));
-                    spans[i] = (a, b, left / length, support * (1 - confidence[i]));
+                    spans[i] = (a, b, left / length, support);
                 }
             }
 

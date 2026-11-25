@@ -208,8 +208,12 @@ namespace ShapeForge
             }
 
             frame ??= new GUIStyle { padding = new RectOffset(12, 12, 10, 10) };
-            heading ??= new GUIStyle(EditorStyles.boldLabel) { fontSize = 21 };
-            // Rebuilt every pass: a cached copy can keep a stale black text color after a skin or domain reload.
+            // Text styles are rebuilt every pass with explicit colors: a cached copy can keep a stale black text color
+            // after a skin or domain reload.
+            var text = EditorGUIUtility.isProSkin ? new Color(.92f, .92f, .92f) : new Color(.1f, .1f, .1f);
+            heading = new GUIStyle(EditorStyles.boldLabel) { fontSize = 21, normal = { textColor = text } };
+            footer = new GUIStyle(EditorStyles.wordWrappedMiniLabel) { normal = { textColor = text } };
+            hintStyle = new GUIStyle(EditorStyles.wordWrappedLabel) { fontSize = 11, normal = { textColor = text } };
             checkmark = new GUIStyle(EditorStyles.boldLabel)
             {
                 alignment = TextAnchor.MiddleCenter,
@@ -220,8 +224,6 @@ namespace ShapeForge
             {
                 normal = { textColor = EditorGUIUtility.isProSkin ? new Color(1f, 0.52f, 0.52f) : new Color(0.65f, 0.12f, 0.12f) }
             };
-            footer ??= new GUIStyle(EditorStyles.wordWrappedMiniLabel);
-            hintStyle ??= new GUIStyle(EditorStyles.wordWrappedLabel) { fontSize = 11 };
 
             using (new EditorGUILayout.VerticalScope(frame, GUILayout.ExpandHeight(true)))
             {
