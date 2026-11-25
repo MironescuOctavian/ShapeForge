@@ -208,13 +208,14 @@ namespace ShapeForge
 
             frame ??= new GUIStyle { padding = new RectOffset(12, 12, 10, 10) };
             heading ??= new GUIStyle(EditorStyles.boldLabel) { fontSize = 21 };
-            checkmark ??= new GUIStyle(EditorStyles.boldLabel)
+            // Rebuilt every pass: a cached copy can keep a stale black text color after a skin or domain reload.
+            checkmark = new GUIStyle(EditorStyles.boldLabel)
             {
                 alignment = TextAnchor.MiddleCenter,
                 normal = { textColor = EditorGUIUtility.isProSkin
                     ? new Color(0.46f, 0.82f, 0.59f) : new Color(0.14f, 0.43f, 0.23f) }
             };
-            cross ??= new GUIStyle(checkmark)
+            cross = new GUIStyle(checkmark)
             {
                 normal = { textColor = EditorGUIUtility.isProSkin ? new Color(1f, 0.52f, 0.52f) : new Color(0.65f, 0.12f, 0.12f) }
             };
