@@ -87,6 +87,33 @@ namespace ShapeForge
             PrefabUtility.RecordPrefabInstancePropertyModifications(component);
         }
 
+        // Adds a binding for every listed body shape the outfit mesh already has and that no binding targets yet.
+        // Existing bindings are never changed. Returns the number of bindings added.
+        internal static int SyncShared(SkinnedMeshRenderer outfit, SkinnedMeshRenderer body, Transform root, string[] bodyShapes)
+        {
+            if (!Available)
+                throw new InvalidOperationException("Modular Avatar is unavailable.");
+            if (!root || body.GetComponents<SkinnedMeshRenderer>().Length != 1 ||
+                outfit.GetComponents<SkinnedMeshRenderer>().Length != 1)
+                throw new InvalidOperationException("MA synchronization needs both renderers under the same VRChat avatar and one renderer per object.");
+
+            var mesh = outfit.sharedMesh;
+            int added = 0;
+            if (!mesh)
+                return added;
+            foreach (var shape in bodyShapes)
+            {
+                if (mesh.GetBlendShapeIndex(shape) < 0)
+                    continue;
+                var change = Plan(outfit, body, root, out var bodyPath, out _, shape);
+                if (change == SyncChange.None)
+                    continue;
+                Apply(outfit, body, change, bodyPath, shape);
+                added++;
+            }
+            return added;
+        }
+
         internal static bool RemoveOwned(SkinnedMeshRenderer outfit, GeneratedShape info)
         {
             if (!Available || info.syncChange == SyncChange.None)

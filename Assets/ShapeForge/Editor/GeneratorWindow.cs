@@ -419,6 +419,21 @@ namespace ShapeForge
                 }
             }
 
+            using (new EditorGUI.DisabledScope(!ModularAvatarSync.Available || !body || pieces.Length == 0 || editing))
+            {
+                if (GUILayout.Button(new GUIContent("Sync Existing Shapes",
+                    "Add MA Blendshape Sync bindings on every piece for each body shape it already has. Existing bindings are left alone."),
+                    GUILayout.Height(24)))
+                {
+                    var shapes = shapeNames;
+                    Run("Sync ShapeForge Blendshapes", "Synced", pieces, r =>
+                    {
+                        int added = ModularAvatarSync.SyncShared(r, body, avatarRoot, shapes);
+                        return added == 0 ? "Nothing new to sync." : $"Added {added} MA sync binding{(added == 1 ? "" : "s")}.";
+                    });
+                }
+            }
+
             if (summary != null)
                 EditorGUILayout.HelpBox(summary, summaryType);
         }
