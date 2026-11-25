@@ -12,7 +12,9 @@ namespace ShapeForge
             "Choose an outfit and a body shape. Click Edit to inspect the checked pieces in Scene View, or Generate to save the fit. Hover over a control for help.";
 
         private const string OutfitSessionKey = "Octa.OutfitBlendshapeGenerator.Outfit";
-        [SerializeField] private TransferMethod transferMethod;
+        [SerializeField] private TransferMethod transferMethod = TransferMethod.Fabric;
+        // 1: Fabric became the default transfer. Windows saved earlier switch to it once.
+        [SerializeField] private int settingsVersion;
         [SerializeField] private bool reviewHiddenShapes;
         private Mesh inspectedBody;
         private Hash128 inspectedBodyHash;
@@ -84,6 +86,11 @@ namespace ShapeForge
 
         private void OnEnable()
         {
+            if (settingsVersion < 1)
+            {
+                transferMethod = TransferMethod.Fabric;
+                settingsVersion = 1;
+            }
             minSize = new Vector2(400, 440);
             saveChangesMessage = "Save the ShapeForge corrections before closing?";
             wantsMouseMove = true;
@@ -305,7 +312,7 @@ namespace ShapeForge
             if (showAdvanced)
             {
                 var nextMethod = (TransferMethod)EditorGUILayout.EnumPopup(new GUIContent("Transfer Method",
-                    "Start with Barycentric, the default. Try Weighted for loose cloth or RBF for a broad change like the belly. Compare in Preview."), transferMethod);
+                    "Fabric is the default. It follows the body where cloth touches it, lets loose cloth hang, and keeps it out of the body. Barycentric, Weighted and RBF are the classic per-vertex transfers. Compare in Edit."), transferMethod);
                 if (nextMethod != transferMethod)
                 {
                     transferMethod = nextMethod;

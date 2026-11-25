@@ -43,7 +43,7 @@ namespace ShapeForge
             return protectedMotion;
         }
 
-        internal LayerFit(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape, TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral)
+        internal LayerFit(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape, TransferMethod method = TransferMethod.Fabric, BodyReference mode = BodyReference.Neutral)
         {
             this.shape = shape;
             Reverse = mode == BodyReference.OtherActiveShapesAndTargetAt100;
@@ -157,7 +157,10 @@ namespace ShapeForge
 
         internal LayerFrame(SkinnedMeshRenderer body, SkinnedMeshRenderer[] renderers, string shape, TransferMethod method, float weight, bool allowStationary, Vector3[] reference, bool reverse, LayerFrame prior, Dictionary<SkinnedMeshRenderer, int[]> welds)
         {
-            var source = new ShapeTransfer.FitSource(body.sharedMesh, shape, method, weight, reference, reverse);
+            var source = new ShapeTransfer.FitSource(body.sharedMesh, shape, method, weight, reference, reverse)
+            {
+                Up = body.transform.InverseTransformDirection(Vector3.up).normalized
+            };
             bodyMotion = source.Deltas;
             bodyPeak = source.Peak;
             radius = Mathf.Max(bodyPeak, prior?.bodyPeak ?? 0) * .20f;

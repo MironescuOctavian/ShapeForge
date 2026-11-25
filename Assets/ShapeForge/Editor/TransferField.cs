@@ -4,7 +4,8 @@ using UnityEngine;
 
 namespace ShapeForge
 {
-    internal enum TransferMethod { Barycentric, Weighted, RBF }
+    // Fabric is the field solver in ShapeTransfer.Field.cs. The others are the classic per-vertex transfers.
+    internal enum TransferMethod { Barycentric, Weighted, RBF, Fabric }
 
     // Estimate motion on the contacted body patch. The downstream fit and clearance
     // solve are shared so method comparisons only change the starting displacement.

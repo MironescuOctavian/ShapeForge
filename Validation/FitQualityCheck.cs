@@ -48,35 +48,76 @@ public static class FitQualityCheck
         new Case("cleavage 4cm bust, 3mm gap", .003f, .04f, .03f, .0005f, .00053f, .0018f, 0, Body.Cleavage),
     };
 
+    // Fabric, the default, is gated by its own ceiling, also about 1.25 times its result. It does not hold the rest gap
+    // of loose cloth exactly: outfits whose creators made the shape by hand show loose fabric hanging and spanning hollows
+    // instead, so its loose and steep cases sit above the classic Barycentric transfer on these ideal bodies.
+    private static readonly Dictionary<string, (float P95, float Roughness, float Drift)> FabricLimits = new()
+    {
+        ["tight 2mm gap, 3cm bump"] = (.00045f, .00039f, .0009f),
+        ["loose 15mm gap, 3cm bump"] = (.0064f, .0014f, .0074f),
+        ["loose 15mm gap, 6mm bump"] = (.0012f, .00029f, .0016f),
+        ["steep 3cm bump, 8mm gap"] = (.0085f, .0036f, .0103f),
+        ["steep, fine body mesh"] = (.0095f, .0035f, .0097f),
+        ["shrink 3cm dip, 8mm gap"] = (.0039f, .0019f, .0079f),
+        ["torso 3cm bust, 5mm gap"] = (.0013f, .00026f, .0024f),
+        ["cleavage 4cm bust, 3mm gap"] = (.00038f, .00028f, .00083f),
+    };
+
+    private static TransferMethod method = TransferMethod.Fabric;
+
     public static void Run()
     {
         var report = new StringBuilder("SHAPEFORGE FIT QUALITY\n");
         var failures = new List<string>();
+        foreach (var each in new[] { TransferMethod.Barycentric, TransferMethod.Fabric })
+        {
+        method = each;
+        report.AppendLine($"[{method}]");
         foreach (var c in Cases)
         {
             var (mean, p95, max, penetrations, covered, roughness, drift) = Measure(c);
+            var limit = method == TransferMethod.Fabric ? FabricLimits[c.Name] : (c.MaxP95, c.MaxRoughness, c.MaxDrift);
             report.AppendLine($"{c.Name}: gap error mean {mean * 1000:F2} p95 {p95 * 1000:F2} max {max * 1000:F2} mm, " +
                 $"drift p95 {drift * 1000:F2} mm, roughness p95 {roughness * 1000:F3} mm, penetrations {penetrations}, followed {covered:P0}");
-            if (p95 > c.MaxP95) failures.Add($"{c.Name}: p95 {p95 * 1000:F2} mm exceeds {c.MaxP95 * 1000:F2} mm");
-            if (drift > c.MaxDrift) failures.Add($"{c.Name}: drift {drift * 1000:F2} mm exceeds {c.MaxDrift * 1000:F2} mm");
-            if (roughness > c.MaxRoughness) failures.Add($"{c.Name}: roughness {roughness * 1000:F3} mm exceeds {c.MaxRoughness * 1000:F3} mm");
-            if (penetrations > 0) failures.Add($"{c.Name}: {penetrations} penetrations");
+            if (p95 > limit.Item1) failures.Add($"{method} {c.Name}: p95 {p95 * 1000:F2} mm exceeds {limit.Item1 * 1000:F2} mm");
+            if (drift > limit.Item3) failures.Add($"{method} {c.Name}: drift {drift * 1000:F2} mm exceeds {limit.Item3 * 1000:F2} mm");
+            if (roughness > limit.Item2) failures.Add($"{method} {c.Name}: roughness {roughness * 1000:F3} mm exceeds {limit.Item2 * 1000:F3} mm");
+            if (penetrations > 0) failures.Add($"{method} {c.Name}: {penetrations} penetrations");
         }
         report.AppendLine(HarnessCrossCheck());
         float stray = WrongSide();
         report.AppendLine($"wrong-side: garment on a stationary front sheet moved {stray * 1000:F2} mm because of a moving back sheet");
-        if (stray > .002f) failures.Add($"wrong-side: garment followed the moving surface behind it ({stray * 1000:F2} mm)");
+        if (stray > .002f) failures.Add($"{method} wrong-side: garment followed the moving surface behind it ({stray * 1000:F2} mm)");
         float bridge = Bridge();
         report.AppendLine($"bridge: a strap over a valley lifts {bridge:P0} of its supporting crowns");
-        if (bridge < .6f) failures.Add($"bridge: strap sagged into the valley ({bridge:P0} of the crown lift)");
+        if (bridge < .6f) failures.Add($"{method} bridge: strap sagged into the valley ({bridge:P0} of the crown lift)");
         var (strain, tilt) = Button();
         report.AppendLine($"button: largest strain {strain:P2}, tilt error {tilt:F1} degrees on a 40 degree flank");
-        if (strain > .01f) failures.Add($"button: a compact closed part deformed by {strain:P1}");
-        if (tilt > 25) failures.Add($"button: a compact closed part tilted {tilt:F1} degrees away from the body");
+        if (strain > .01f) failures.Add($"{method} button: a compact closed part deformed by {strain:P1}");
+        if (tilt > 25) failures.Add($"{method} button: a compact closed part tilted {tilt:F1} degrees away from the body");
+        }
         report.AppendLine(Benchmark());
         Debug.Log(report.ToString());
         if (failures.Count > 0) throw new Exception("Fit quality regressed:\n" + string.Join("\n", failures));
         Debug.Log("SHAPEFORGE FIT QUALITY PASSED");
+    }
+
+    // Batch entry: the Table for each method, logged together.
+    public static void TableAll()
+    {
+        var report = new StringBuilder("SHAPEFORGE FIT QUALITY TABLE\n");
+        method = TransferMethod.Barycentric;
+        report.AppendLine("[Barycentric]").Append(Table());
+        // -benchSweep "Name=1,Other=2;..." runs Fabric once per set. Sets apply cumulatively.
+        var args = Environment.GetCommandLineArgs();
+        int at = Array.IndexOf(args, "-benchSweep");
+        method = TransferMethod.Fabric;
+        foreach (var set in (at >= 0 && at + 1 < args.Length ? args[at + 1] : "").Split(';'))
+        {
+            ChestBench.ApplyParams(set);
+            report.AppendLine($"[Fabric {set}]").Append(Table());
+        }
+        Debug.Log(report.ToString());
     }
 
     // One line per case, without limits or the benchmark. Used to compare solver variants quickly.
@@ -124,7 +165,7 @@ public static class FitQualityCheck
         Mesh result = null;
         try
         {
-            result = ShapeTransfer.Generate(body, cloth, Matrix4x4.identity, out _, Shape);
+            result = ShapeTransfer.Generate(body, cloth, Matrix4x4.identity, out _, Shape, null, method);
             var motion = ShapeTransfer.ReadSourceDeltas(result, Shape);
             int crown = Mathf.RoundToInt((.06f / .24f + .5f) * segments) * 2, valley = segments;
             return motion[valley].z / .02f;
@@ -155,7 +196,7 @@ public static class FitQualityCheck
         Mesh result = null;
         try
         {
-            result = ShapeTransfer.Generate(body, cloth, Matrix4x4.identity, out _, Shape);
+            result = ShapeTransfer.Generate(body, cloth, Matrix4x4.identity, out _, Shape, null, method);
             var motion = ShapeTransfer.ReadSourceDeltas(result, Shape);
             float strain = 0;
             for (int a = 0; a < 8; a++)
@@ -190,7 +231,7 @@ public static class FitQualityCheck
         var clothRenderer = new GameObject("harness cloth").AddComponent<SkinnedMeshRenderer>();
         bodyRenderer.sharedMesh = body;
         clothRenderer.sharedMesh = cloth;
-        try { return FitMetrics.Measure(bodyRenderer, new[] { clothRenderer }, Shape); }
+        try { return FitMetrics.Measure(bodyRenderer, new[] { clothRenderer }, Shape, method); }
         finally
         {
             UnityEngine.Object.DestroyImmediate(bodyRenderer.gameObject);
@@ -219,7 +260,7 @@ public static class FitQualityCheck
         Mesh result = null;
         try
         {
-            try { result = ShapeTransfer.Generate(body, cloth, Matrix4x4.identity, out _, Shape); }
+            try { result = ShapeTransfer.Generate(body, cloth, Matrix4x4.identity, out _, Shape, null, method); }
             catch (InvalidOperationException exception) when (exception.Message.Contains("No outfit vertices matched"))
             {
                 // Everything attached to the stationary front sheet, so there is nothing to transfer.
@@ -253,11 +294,11 @@ public static class FitQualityCheck
         try
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
-            var single = ShapeTransfer.Generate(body, inner, Matrix4x4.identity, out _, Shape);
+            var single = ShapeTransfer.Generate(body, inner, Matrix4x4.identity, out _, Shape, null, method);
             long generate = watch.ElapsedMilliseconds;
             UnityEngine.Object.DestroyImmediate(single);
             watch.Restart();
-            var fit = new LayerFit(bodyRenderer, new[] { innerRenderer, outerRenderer }, Shape);
+            var fit = new LayerFit(bodyRenderer, new[] { innerRenderer, outerRenderer }, Shape, method);
             long layered = watch.ElapsedMilliseconds;
             return $"benchmark ({inner.vertexCount} verts x2, 2 frames): Generate {generate} ms, LayerFit {layered} ms";
         }
@@ -344,7 +385,7 @@ public static class FitQualityCheck
         Mesh result = null;
         try
         {
-            try { result = ShapeTransfer.Generate(body, cloth, Matrix4x4.identity, out _, Shape); }
+            try { result = ShapeTransfer.Generate(body, cloth, Matrix4x4.identity, out _, Shape, null, method); }
             catch (InvalidOperationException)
             {
                 // Nothing matched: the garment never moves, so it keeps the full lift as its error.

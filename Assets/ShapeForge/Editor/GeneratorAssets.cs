@@ -155,7 +155,8 @@ namespace ShapeForge
                     }
                     else
                         generated = fit != null ? fit.Build(outfit, out diagnostic) :
-                        ShapeTransfer.Generate(bodyMesh, original, matrix, out diagnostic, shape);
+                        ShapeTransfer.Generate(bodyMesh, original, matrix, out diagnostic, shape,
+                            body.transform.InverseTransformDirection(Vector3.up).normalized);
                     if (!AssetDatabase.IsValidFolder(outputFolder))
                         AssetDatabase.CreateFolder(toolFolder, "Generated");
                     path = AssetDatabase.GenerateUniqueAssetPath(path);

@@ -211,7 +211,7 @@ namespace ShapeForge
         internal FitPreview(GeneratorWindow host = null) => this.host = host;
 
         internal void Start(SkinnedMeshRenderer body, SkinnedMeshRenderer[] outfits, string shape,
-            TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral,
+            TransferMethod method = TransferMethod.Fabric, BodyReference mode = BodyReference.Neutral,
             SkinnedMeshRenderer[] existing = null)
         {
             settingsScroll = Vector2.zero;

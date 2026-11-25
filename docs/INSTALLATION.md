@@ -10,7 +10,7 @@
 
 ## Build the package
 
-Import or copy the tracked Assets/ShapeForge folder and its .meta file into a clean Unity 6000.0.67f1 project. Select the tool folder and use Assets → Export Package. Disable Include Dependencies and review the export list. Include the eight ShapeForge Editor scripts, their metadata and the bundled README. Save the package as ShapeForge.unitypackage.
+Import or copy the tracked Assets/ShapeForge folder and its .meta file into a clean Unity 6000.0.67f1 project. Select the tool folder and use Assets → Export Package. Disable Include Dependencies and review the export list. Include every ShapeForge Editor script, their metadata and the bundled README. Save the package as ShapeForge.unitypackage.
 
 ## Clean project check
 

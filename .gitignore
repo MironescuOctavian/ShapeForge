@@ -33,3 +33,6 @@ Thumbs.db
 !/Assets/ShapeForge/Editor.meta
 !/Assets/ShapeForge/README.md
 !/Assets/ShapeForge/README.md.meta
+
+# Unity writes these when Validation is linked into a bench project.
+/Validation/*.meta

@@ -6,7 +6,7 @@ namespace ShapeForge
 {
     internal enum BodyReference { Neutral, OtherActiveShapes, OtherActiveShapesAndTargetAt100 }
 
-    internal static class ShapeTransfer
+    internal static partial class ShapeTransfer
     {
         internal static List<(string Name, bool Hidden)> DiscoverShapes(Mesh mesh)
         {
@@ -119,10 +119,18 @@ namespace ShapeForge
             internal readonly TriangleSurface OriginalSurface;
             private TriangleSurface fittedSurface;
             internal readonly TransferField Field;
+            internal readonly Mesh Mesh;
+            internal readonly TransferMethod Method;
+            // World up in the body's mesh space. Loose fabric hangs, so it does not rise with the body as far as it falls.
+            internal Vector3 Up = Vector3.up;
+            // Multi-scale body motion for the field solver, built on first use.
+            internal BodyField Smoothed;
 
-            internal FitSource(Mesh mesh, string shape, TransferMethod method = TransferMethod.Barycentric, float weight = 100, Vector3[] reference = null, bool reverse = false)
+            internal FitSource(Mesh mesh, string shape, TransferMethod method = TransferMethod.Fabric, float weight = 100, Vector3[] reference = null, bool reverse = false)
             {
                 ShapeName = shape;
+                Mesh = mesh;
+                Method = method;
                 Positions = reference ?? mesh.vertices;
                 Deltas = ReadSourceDeltas(mesh, shape, reverse ? 100 - weight : weight);
                 if (reverse)
@@ -155,7 +163,7 @@ namespace ShapeForge
                 var indexRegion = queryRegion;
                 indexRegion.Expand(Radius * 2);
                 OriginalSurface = new TriangleSurface(mesh, Positions, indexRegion);
-                if (method != TransferMethod.Barycentric)
+                if (method == TransferMethod.Weighted || method == TransferMethod.RBF)
                     Field = new TransferField(mesh, Positions, Deltas, method);
             }
 
@@ -218,14 +226,18 @@ namespace ShapeForge
             return normals;
         }
 
-        internal static Mesh Generate(Mesh body, Mesh outfit, Matrix4x4 outfitToBody, out string warning, string shape)
+        internal static Mesh Generate(Mesh body, Mesh outfit, Matrix4x4 outfitToBody, out string warning, string shape, Vector3? up = null,
+            TransferMethod method = TransferMethod.Fabric)
         {
             var vertices = outfit.vertices;
             var weights = FrameWeights(body, shape);
             var frames = new List<(float, Vector3[])>();
             warning = "";
             foreach (float weight in weights)
-                frames.Add((weight, Fit(new FitSource(body, shape, weight: weight), outfit, vertices, outfitToBody, out warning, weights.Count > 1)));
+            {
+                var source = new FitSource(body, shape, method, weight) { Up = up ?? Vector3.up };
+                frames.Add((weight, Fit(source, outfit, vertices, outfitToBody, out warning, weights.Count > 1)));
+            }
             return BuildMesh(outfit, vertices, frames, shape);
         }
 
@@ -246,6 +258,8 @@ namespace ShapeForge
                 warning = "Stationary frame.";
                 return new Vector3[vertices.Length];
             }
+            if (body.Method == TransferMethod.Fabric)
+                return FitField(body, outfit, vertices, outfitToBody, out warning, allowStationary, weld);
 
             var source = body.Positions;
             var deformation = body.Deltas;
@@ -662,7 +676,7 @@ namespace ShapeForge
         // included, that best matches its transferred motion. A part that this would bend by more than about a third of its
         // size, or that is large next to the moving body region, keeps its flexible fit.
         private static int PreserveCompactDetails(Vector3[] vertices, Vector3[] deltas, int[] islands, bool[] closed,
-            Matrix4x4 outfitToBody, float regionSize)
+            Matrix4x4 outfitToBody, float regionSize, HashSet<int> adjustedIslands = null)
         {
             var sections = new Dictionary<int, List<int>>();
             for (int i = 0; i < islands.Length; i++)
@@ -729,6 +743,7 @@ namespace ShapeForge
                     var point = outfitToBody.MultiplyPoint3x4(vertices[i]);
                     deltas[i] = bodyToOutfit.MultiplyVector(rotation * (point - restCenter) + movedCenter - point);
                 }
+                adjustedIslands?.Add(islands[section[0]]);
                 adjusted++;
             }
             return adjusted;
@@ -779,7 +794,7 @@ namespace ShapeForge
             return bounds;
         }
 
-        internal static Func<SkinnedMeshRenderer, bool> ShapeOverlap(SkinnedMeshRenderer body, string shape, TransferMethod method = TransferMethod.Barycentric, BodyReference mode = BodyReference.Neutral)
+        internal static Func<SkinnedMeshRenderer, bool> ShapeOverlap(SkinnedMeshRenderer body, string shape, TransferMethod method = TransferMethod.Fabric, BodyReference mode = BodyReference.Neutral)
         {
             var reference = ReferencePositions(body, shape, mode);
             bool reverse = mode == BodyReference.OtherActiveShapesAndTargetAt100;

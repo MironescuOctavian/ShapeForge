@@ -12,7 +12,7 @@ ShapeForge transfers body blendshapes to clothing already made for the same avat
 
 ## What it does
 
-- Transfers shapes using Barycentric, Weighted or RBF interpolation. Barycentric is the default.
+- Transfers shapes with Fabric, the default: cloth follows the body where it touches, loose fabric hangs and spans hollows, and the result is kept out of the body. Advanced also offers the classic Barycentric, Weighted and RBF transfers.
 - Preserves authored positive blendshape frames.
 - Fits selected pieces together and checks for suspect cloth and body intersections.
 - Provides a Scene View fit editor with fit scrubbing, cloth isolation, sculpting, smoothing, Straighten Span, and correction history.

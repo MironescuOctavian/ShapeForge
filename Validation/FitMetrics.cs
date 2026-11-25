@@ -68,11 +68,12 @@ public static class FitMetrics
         return Measure(body, outfits, shape);
     }
 
-    internal static string Measure(SkinnedMeshRenderer body, SkinnedMeshRenderer[] outfits, string shape)
+    internal static string Measure(SkinnedMeshRenderer body, SkinnedMeshRenderer[] outfits, string shape,
+        TransferMethod method = TransferMethod.Fabric)
     {
         var report = new StringBuilder($"ShapeForge fit metrics, shape \"{shape}\", body {body.name}\n");
         var watch = System.Diagnostics.Stopwatch.StartNew();
-        var fit = new LayerFit(body, outfits, shape);
+        var fit = new LayerFit(body, outfits, shape, method);
         long solveMs = watch.ElapsedMilliseconds;
 
         var mesh = body.sharedMesh;
