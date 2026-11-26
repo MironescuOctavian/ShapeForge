@@ -8,7 +8,7 @@
 ![Editor only](docs/images/badges/editor.svg)
 [![MIT license](docs/images/badges/license.svg)](LICENSE)
 
-[Installation](#installation) · [Usage](#usage) · [How it works](#how-it-works) · [Evaluation](#evaluation) · [Limitations](#limitations)
+[Installation](#installation) · [Usage](#usage) · [How it works](#how-it-works) · [Limitations](#limitations)
 
 </div>
 
@@ -20,14 +20,14 @@ Done by hand, this means sculpting every garment separately in a 3D modeling pac
 
 ## Features
 
-| Feature | Description |
-|---|---|
-| **Fabric transfer** | A custom solver in which fitted cloth follows the body, while loose cloth hangs and spans gaps. |
-| **Layered clothing** | Fits several garments together and checks for cloth-to-cloth and cloth-to-body intersections. |
-| **Multi-frame shapes** | Preserves the positive in-between frames of the source blendshape. |
-| **Scene View editor** | Previews the fit at any weight, with sculpting, smoothing, vertex editing, span straightening and undo. |
-| **Non-destructive output** | Saves separate mesh assets that keep skinning and existing blendshapes. Generated shapes can be removed. |
-| **Modular Avatar support** | Optionally links garment sliders to the body. Modular Avatar is not required. |
+| | Feature | Description |
+|:---:|---|---|
+| <img src="docs/images/icons/fabric.svg" width="40" alt=""> | **Fabric transfer** | A custom solver in which fitted cloth follows the body, while loose cloth hangs and spans gaps. |
+| <img src="docs/images/icons/layers.svg" width="40" alt=""> | **Layered clothing** | Fits several garments together and checks for cloth-to-cloth and cloth-to-body intersections. |
+| <img src="docs/images/icons/frames.svg" width="40" alt=""> | **Multi-frame shapes** | Preserves the positive in-between frames of the source blendshape. |
+| <img src="docs/images/icons/editor.svg" width="40" alt=""> | **Scene View editor** | Previews the fit at any weight, with sculpting, smoothing, vertex editing, span straightening and undo. |
+| <img src="docs/images/icons/safe.svg" width="40" alt=""> | **Non-destructive output** | Saves separate mesh assets that keep skinning and existing blendshapes. Generated shapes can be removed. |
+| <img src="docs/images/icons/link.svg" width="40" alt=""> | **Modular Avatar support** | Optionally links garment sliders to the body. Modular Avatar is not required. |
 
 ## Installation
 
@@ -69,23 +69,6 @@ The Fabric solver treats each garment as a connected surface instead of moving e
 
 The classic **Barycentric**, **Weighted** and **RBF** (radial basis function) transfers remain available under **Advanced** for comparison.
 
-## Evaluation
-
-Some garments ship with a blendshape that their creator sculpted by hand. These serve as reference data: the creator's shape is removed, ShapeForge regenerates it, and the two results are compared vertex by vertex. A higher score means a closer match.
-
-| Test set | Previous solver | Fabric solver |
-|---|:---:|:---:|
-| Shape used for tuning | 48.6% | **61.3%** |
-| Held-out shape A | 55.7% | **57.1%** |
-| Held-out shape B | 55.9% | **61.4%** |
-| Held-out shape C | 34.6% | **40.0%** |
-| Held-out shape D (8 meshes) | 79.5% | **84.7%** |
-
-On the tuning shape, the number of vertices ending up inside the body at full weight fell from **775 to 311**.
-
-> [!NOTE]
-> All reference data comes from clothing made for **one character model**, so results on other models are not yet measured. The score reflects how closely per-vertex motion matches the reference. It is not a pass rate.
-
 ## Compatibility
 
 | Component | Details |
@@ -103,7 +86,7 @@ On the tuning shape, the number of vertices ending up inside the body at full we
 
 ## Development
 
-The editor tool is written in C# and lives in [`Assets/ShapeForge`](Assets/ShapeForge). Automated checks and evaluation tools are in [`Validation`](Validation). See the [changelog](CHANGELOG.md) for the release history.
+The editor tool is written in C# and lives in [`Assets/ShapeForge`](Assets/ShapeForge). Automated checks and test tools are in [`Validation`](Validation). Solver changes are tested against blendshapes that clothing creators sculpted by hand. See the [changelog](CHANGELOG.md) for the release history.
 
 **Reporting an issue:** include your Unity version, package versions, blendshape weights, the transfer method and, if you are permitted to share one, a reproduction.
 

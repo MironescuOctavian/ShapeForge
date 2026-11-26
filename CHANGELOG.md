@@ -5,7 +5,7 @@
 First public release.
 
 ### Transfer
-- **Fabric solver (default).** Smooths body motion by the cloth's distance from the surface, lets loose fabric hang, carries unsupported straight sections by their end points, keeps small closed parts rigid, solves each garment as one surface and pushes cloth back outside the body. Tested against creator-made reference shapes, it matched more closely than the previous solver on all five test sets. See the [evaluation](README.md#evaluation).
+- **Fabric solver (default).** Smooths body motion by the cloth's distance from the surface, lets loose fabric hang, carries unsupported straight sections by their end points, keeps small closed parts rigid, solves each garment as one surface and pushes cloth back outside the body.
 - Classic Barycentric, Weighted and RBF transfers are available under Advanced.
 - Preserves authored positive blendshape frames.
 - Fits layered garments together and checks for cloth and body intersections.

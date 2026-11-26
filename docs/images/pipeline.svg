@@ -1,20 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 250" width="1280" height="250" role="img" aria-label="Fabric transfer in four steps: read the body, let fabric hang, solve the whole garment, keep it outside the body">
-  <rect width="1280" height="250" rx="18" fill="#171614"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 302" width="1280" height="302" role="img" aria-label="Fabric transfer in four steps: read the body, let fabric hang, solve the whole garment, keep it outside the body">
+  <rect width="1280" height="302" rx="18" fill="#171614"/>
   <g font-family="'Segoe UI', -apple-system, Helvetica, Arial, sans-serif">
     <g fill="#201e1b" stroke="#4a4338">
-      <rect x="28" y="28" width="278" height="194" rx="12"/><rect x="343" y="28" width="278" height="194" rx="12"/>
-      <rect x="658" y="28" width="278" height="194" rx="12"/><rect x="973" y="28" width="278" height="194" rx="12"/>
+      <rect x="28" y="28" width="278" height="246" rx="12"/><rect x="343" y="28" width="278" height="246" rx="12"/>
+      <rect x="658" y="28" width="278" height="246" rx="12"/><rect x="973" y="28" width="278" height="246" rx="12"/>
     </g>
-    <path d="M316 125h17m-7-7 7 7-7 7M631 125h17m-7-7 7 7-7 7M946 125h17m-7-7 7 7-7 7" fill="none" stroke="#f4c267" stroke-width="2.5"/>
+    <path d="M316 151h17m-7-7 7 7-7 7M631 151h17m-7-7 7 7-7 7M946 151h17m-7-7 7 7-7 7" fill="none" stroke="#f4c267" stroke-width="2.5"/>
+    <rect x="52" y="50" width="42" height="42" rx="10" fill="#2e2a23"/>
+    <g transform="translate(61 59)" fill="none" stroke="#f4c267" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/><path d="M7.500 12.500c1.500-3.500 5.500-3.500 7 0"/></g>
+    <rect x="367" y="50" width="42" height="42" rx="10" fill="#2e2a23"/>
+    <g transform="translate(376 59)" fill="none" stroke="#f4c267" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18"/><path d="M5 4c0 6 1 10-1 15 3-1.500 5 1.500 8 0s5-1.500 8 0c-2-5-1-9-1-15"/><path d="M12 8v7m-2.500-2.500L12 15l2.500-2.500"/></g>
+    <rect x="682" y="50" width="42" height="42" rx="10" fill="#2e2a23"/>
+    <g transform="translate(691 59)" fill="none" stroke="#f4c267" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 12h16M12 4v16M4 4l16 16"/></g>
+    <rect x="997" y="50" width="42" height="42" rx="10" fill="#2e2a23"/>
+    <g transform="translate(1006 59)" fill="none" stroke="#f4c267" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.500 4.500 5.500V11c0 5 3.200 8.600 7.500 10.500 4.300-1.900 7.500-5.500 7.500-10.500V5.500L12 2.500z"/><path d="m8.500 11.800 2.500 2.500 4.600-4.800"/></g>
     <g font-size="18" font-weight="700" fill="#f4c267">
-      <text x="52" y="70">1 · Read the body</text><text x="367" y="70">2 · Let fabric hang</text>
-      <text x="682" y="70">3 · Solve as one piece</text><text x="997" y="70">4 · Keep it outside</text>
+      <text x="52" y="122">1 · Read the body</text><text x="367" y="122">2 · Let fabric hang</text>
+      <text x="682" y="122">3 · Solve as one piece</text><text x="997" y="122">4 · Keep it outside</text>
     </g>
     <g font-size="17" fill="#d9d2c5">
-      <text x="52" y="112">Tight cloth follows the skin.</text><text x="52" y="140">The further it stands off,</text><text x="52" y="168">the smoother the motion</text><text x="52" y="196">it copies.</text>
-      <text x="367" y="112">Loose cloth does not lift</text><text x="367" y="140">just because the body under</text><text x="367" y="168">it rises. Straps over a gap</text><text x="367" y="196">move with their two ends.</text>
-      <text x="682" y="112">The whole garment is solved</text><text x="682" y="140">together, so dense and</text><text x="682" y="168">low-poly meshes get the</text><text x="682" y="196">same stiffness.</text>
-      <text x="997" y="112">Cloth that would end up</text><text x="997" y="140">inside the new body shape</text><text x="997" y="168">is pushed clear and the</text><text x="997" y="196">fabric is solved again.</text>
+      <text x="52" y="164">Tight cloth follows the skin.</text><text x="52" y="192">The further it stands off,</text><text x="52" y="220">the smoother the motion</text><text x="52" y="248">it copies.</text>
+      <text x="367" y="164">Loose cloth does not lift</text><text x="367" y="192">just because the body under</text><text x="367" y="220">it rises. Straps over a gap</text><text x="367" y="248">move with their two ends.</text>
+      <text x="682" y="164">The whole garment is solved</text><text x="682" y="192">together, so dense and</text><text x="682" y="220">low-poly meshes get the</text><text x="682" y="248">same stiffness.</text>
+      <text x="997" y="164">Cloth that would end up</text><text x="997" y="192">inside the new body shape</text><text x="997" y="220">is pushed clear and the</text><text x="997" y="248">fabric is solved again.</text>
     </g>
   </g>
 </svg>
