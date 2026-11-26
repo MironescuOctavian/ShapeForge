@@ -5,7 +5,6 @@
 <br>
 
 ![Unity 6](docs/images/badges/unity.svg)
-![Editor only](docs/images/badges/editor.svg)
 [![MIT license](docs/images/badges/license.svg)](LICENSE)
 
 [Installation](#installation) · [Usage](#usage) · [How it works](#how-it-works) · [Limitations](#limitations)
