@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 250" width="1280" height="250" role="img" aria-label="Fabric transfer in four steps: read the body, let fabric hang, solve the whole garment, keep it outside the body">
+  <rect width="1280" height="250" rx="18" fill="#171614"/>
+  <g font-family="'Segoe UI', -apple-system, Helvetica, Arial, sans-serif">
+    <g fill="#201e1b" stroke="#4a4338">
+      <rect x="28" y="28" width="278" height="194" rx="12"/><rect x="343" y="28" width="278" height="194" rx="12"/>
+      <rect x="658" y="28" width="278" height="194" rx="12"/><rect x="973" y="28" width="278" height="194" rx="12"/>
+    </g>
+    <path d="M316 125h17m-7-7 7 7-7 7M631 125h17m-7-7 7 7-7 7M946 125h17m-7-7 7 7-7 7" fill="none" stroke="#f4c267" stroke-width="2.5"/>
+    <g font-size="18" font-weight="700" fill="#f4c267">
+      <text x="52" y="70">1 · Read the body</text><text x="367" y="70">2 · Let fabric hang</text>
+      <text x="682" y="70">3 · Solve as one piece</text><text x="997" y="70">4 · Keep it outside</text>
+    </g>
+    <g font-size="17" fill="#d9d2c5">
+      <text x="52" y="112">Tight cloth follows the skin.</text><text x="52" y="140">The further it stands off,</text><text x="52" y="168">the smoother the motion</text><text x="52" y="196">it copies.</text>
+      <text x="367" y="112">Loose cloth does not lift</text><text x="367" y="140">just because the body under</text><text x="367" y="168">it rises. Straps over a gap</text><text x="367" y="196">move with their two ends.</text>
+      <text x="682" y="112">The whole garment is solved</text><text x="682" y="140">together, so dense and</text><text x="682" y="168">low-poly meshes get the</text><text x="682" y="196">same stiffness.</text>
+      <text x="997" y="112">Cloth that would end up</text><text x="997" y="140">inside the new body shape</text><text x="997" y="168">is pushed clear and the</text><text x="997" y="196">fabric is solved again.</text>
+    </g>
+  </g>
+</svg>
