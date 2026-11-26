@@ -19,39 +19,14 @@ Done by hand, this means sculpting every garment separately in a 3D modeling pac
 
 ## Features
 
-<table>
-<tr><th width="72"></th><th>Feature</th><th>Description</th></tr>
-<tr>
-<td width="72" align="center"><img src="docs/images/icons/fabric.svg" width="40" alt=""></td>
-<td><b>Fabric transfer</b></td>
-<td>A custom solver in which fitted cloth follows the body, while loose cloth hangs and spans gaps.</td>
-</tr>
-<tr>
-<td width="72" align="center"><img src="docs/images/icons/layers.svg" width="40" alt=""></td>
-<td><b>Layered clothing</b></td>
-<td>Fits several garments together and checks for cloth-to-cloth and cloth-to-body intersections.</td>
-</tr>
-<tr>
-<td width="72" align="center"><img src="docs/images/icons/frames.svg" width="40" alt=""></td>
-<td><b>Multi-frame shapes</b></td>
-<td>Preserves the positive in-between frames of the source blendshape.</td>
-</tr>
-<tr>
-<td width="72" align="center"><img src="docs/images/icons/editor.svg" width="40" alt=""></td>
-<td><b>Scene View editor</b></td>
-<td>Previews the fit at any weight, with sculpting, smoothing, vertex editing, span straightening and undo.</td>
-</tr>
-<tr>
-<td width="72" align="center"><img src="docs/images/icons/safe.svg" width="40" alt=""></td>
-<td><b>Non-destructive output</b></td>
-<td>Saves separate mesh assets that keep skinning and existing blendshapes. Generated shapes can be removed.</td>
-</tr>
-<tr>
-<td width="72" align="center"><img src="docs/images/icons/link.svg" width="40" alt=""></td>
-<td><b>Modular Avatar support</b></td>
-<td>Optionally links garment sliders to the body. Modular Avatar is not required.</td>
-</tr>
-</table>
+| Feature | Description |
+|---|---|
+| **Fabric transfer** | A custom solver in which fitted cloth follows the body, while loose cloth hangs and spans gaps. |
+| **Layered clothing** | Fits several garments together and checks for cloth-to-cloth and cloth-to-body intersections. |
+| **Multi-frame shapes** | Preserves the positive in-between frames of the source blendshape. |
+| **Scene View editor** | Previews the fit at any weight, with sculpting, smoothing, vertex editing, span straightening and undo. |
+| **Non-destructive output** | Saves separate mesh assets that keep skinning and existing blendshapes. Generated shapes can be removed. |
+| **Modular Avatar support** | Optionally links garment sliders to the body. Modular Avatar is not required. |
 
 ## Installation
 
