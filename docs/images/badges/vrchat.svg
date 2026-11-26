@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="122" height="22" role="img" aria-label="VRChat: avatars">
-  <clipPath id="r"><rect width="122" height="22" rx="5"/></clipPath>
-  <g clip-path="url(#r)"><rect width="60" height="22" fill="#2b2925"/><rect x="60" width="62" height="22" fill="#f4c267"/></g>
-  <g font-family="'Segoe UI', Verdana, sans-serif" font-size="12" text-anchor="middle">
-    <text x="30" y="15" fill="#ece6da">VRChat</text>
-    <text x="91" y="15" fill="#171614" font-weight="600">avatars</text>
-  </g>
-</svg>

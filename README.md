@@ -5,7 +5,6 @@
 <br>
 
 ![Unity 6](docs/images/badges/unity.svg)
-![VRChat avatars](docs/images/badges/vrchat.svg)
 ![Editor only](docs/images/badges/editor.svg)
 [![MIT license](docs/images/badges/license.svg)](LICENSE)
 
