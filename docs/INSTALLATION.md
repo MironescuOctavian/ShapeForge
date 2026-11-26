@@ -6,7 +6,7 @@
 2. Open Assets → Import Package → Custom Package and select the file.
 3. Import the ShapeForge tool folder. For an existing installation, move the old tool folder to Assets/ShapeForge in Unity before importing. This preserves folder and script GUIDs and avoids duplicate scripts. Back up any generated meshes first.
 4. Open Tools → ShapeForge → Blendshape Generator.
-5. Select the avatar body, outfit and source shape, then preview or generate.
+5. Select the avatar body, outfit and source shape, then click Edit to review the fit or Generate to save it.
 
 ## Build the package
 
@@ -14,7 +14,7 @@ Import or copy the tracked Assets/ShapeForge folder and its .meta file into a cl
 
 ## Clean project check
 
-Import the package into a second scratch Unity 6 project. Once import has completed, place Validation/AccuracyChecks.cs under Assets/Editor. Run Unity batch mode with -executeMethod AccuracyChecks.Run and require exit code zero plus the SHAPEFORGE ACCURACY CHECKS PASSED log marker. Open the generator and its separate fit preview in a graphical editor when testing interface changes.
+Import the package into a second scratch Unity 6 project. Once import has completed, place Validation/AccuracyChecks.cs under Assets/Editor. Run Unity batch mode with -executeMethod AccuracyChecks.Run and require exit code zero plus the SHAPEFORGE ACCURACY CHECKS PASSED log marker. Open the generator and Edit mode in a graphical editor when testing interface changes.
 
 ## GitHub release
 

@@ -15,7 +15,7 @@ public static class FitQualityCheck
 {
     private const string Shape = "bump";
 
-    private enum Body { Plane, Cylinder, Cleavage }
+    private enum Body { Plane, Cylinder, TwinPeaks }
 
     private readonly struct Case
     {
@@ -44,8 +44,8 @@ public static class FitQualityCheck
         new Case("steep 3cm bump, 8mm gap", .008f, .03f, .02f, .0057f, .004f, .0074f),
         new Case("steep, fine body mesh", .008f, .03f, .02f, .0053f, .004f, .0077f, 121),
         new Case("shrink 3cm dip, 8mm gap", .008f, -.03f, .03f, .0038f, .0026f, .0079f),
-        new Case("torso 3cm bust, 5mm gap", .005f, .03f, .045f, .0053f, .0028f, .0059f, 0, Body.Cylinder),
-        new Case("cleavage 4cm bust, 3mm gap", .003f, .04f, .03f, .0005f, .00053f, .0018f, 0, Body.Cleavage),
+        new Case("torso 3cm bump, 5mm gap", .005f, .03f, .045f, .0053f, .0028f, .0059f, 0, Body.Cylinder),
+        new Case("twin peaks 4cm, 3mm gap", .003f, .04f, .03f, .0005f, .00053f, .0018f, 0, Body.TwinPeaks),
     };
 
     // Fabric, the default, is gated by its own ceiling, also about 1.25 times its result. It does not hold the rest gap
@@ -59,8 +59,8 @@ public static class FitQualityCheck
         ["steep 3cm bump, 8mm gap"] = (.0085f, .0036f, .0103f),
         ["steep, fine body mesh"] = (.0095f, .0035f, .0097f),
         ["shrink 3cm dip, 8mm gap"] = (.0039f, .0019f, .0079f),
-        ["torso 3cm bust, 5mm gap"] = (.0013f, .00026f, .0024f),
-        ["cleavage 4cm bust, 3mm gap"] = (.00038f, .00028f, .00083f),
+        ["torso 3cm bump, 5mm gap"] = (.0013f, .00026f, .0024f),
+        ["twin peaks 4cm, 3mm gap"] = (.00038f, .00028f, .00083f),
     };
 
     private static TransferMethod method = TransferMethod.Fabric;
@@ -114,7 +114,7 @@ public static class FitQualityCheck
         method = TransferMethod.Fabric;
         foreach (var set in (at >= 0 && at + 1 < args.Length ? args[at + 1] : "").Split(';'))
         {
-            ChestBench.ApplyParams(set);
+            ReferenceBench.ApplyParams(set);
             report.AppendLine($"[Fabric {set}]").Append(Table());
         }
         Debug.Log(report.ToString());
@@ -319,7 +319,7 @@ public static class FitQualityCheck
         Vector3[] feet, restNormals;
         if (c.Kind == Body.Cylinder)
         {
-            // A torso-like closed tube along Y facing outward, with a bust raised on its +Z side.
+            // A torso-like closed tube along Y facing outward, with a bump raised on its +Z side.
             const float radius = .12f;
             var center = new Vector3(0, 0, radius);
             lift = p =>
@@ -333,9 +333,9 @@ public static class FitQualityCheck
             restNormals = cloth.vertices.Select(p => new Vector3(p.x, 0, p.z).normalized).ToArray();
             feet = cloth.vertices.Select((p, i) => restNormals[i] * radius + Vector3.up * p.y).ToArray();
         }
-        else if (c.Kind == Body.Cleavage)
+        else if (c.Kind == Body.TwinPeaks)
         {
-            // Two rest breasts with a valley between them, grown by the shape. The garment is an offset surface that
+            // Two raised peaks with a valley between them, grown by the shape. The garment is an offset surface that
             // follows the valley, where the nearest body point switches sides.
             float Height(float x, float y) => c.Peak * (Gauss(x - c.Sigma * 2, y) + Gauss(x + c.Sigma * 2, y));
             float Gauss(float x, float y) => Mathf.Exp(-(x * x + y * y) / (2 * c.Sigma * c.Sigma));

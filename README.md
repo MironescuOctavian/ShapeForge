@@ -9,96 +9,104 @@
 ![Editor only](docs/images/badges/editor.svg)
 [![MIT license](docs/images/badges/license.svg)](LICENSE)
 
-**Your avatar has a body shape. Your outfit doesn't. ShapeForge makes it.**
-
-[Install](#install) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Accuracy](#accuracy) · [Limitations](#limitations)
+[Installation](#installation) · [Usage](#usage) · [How it works](#how-it-works) · [Evaluation](#evaluation) · [Limitations](#limitations)
 
 </div>
 
 ---
 
-ShapeForge copies body blendshapes, such as chest, waist or hip shapes, onto clothing **made for the same avatar**. Check the fit live in the Scene View, touch up any problem spots, and save a new mesh for each garment. Your original meshes are never changed.
+ShapeForge is a Unity Editor tool that transfers blendshapes from a character's body mesh to the clothing meshes made for that character. When the body changes shape, the clothing follows it.
+
+Done by hand, this means sculpting every garment separately in a 3D modeling package. ShapeForge generates the shape inside Unity, lets you inspect and correct it in the Scene View, and saves the result as a new mesh asset. Source meshes are never modified.
 
 ## Features
 
-| | |
+| Feature | Description |
 |---|---|
-| 🧵 **Fabric transfer** | Cloth follows the body where it touches. Loose fabric hangs and spans hollows instead of sticking to the skin. |
-| 🧱 **Layered outfits** | Pieces are fitted together, with checks for cloth-to-cloth and cloth-to-body intersections. |
-| 🎚️ **Authored frames** | Multi-frame source blendshapes keep their positive in-between frames. |
-| ✏️ **Scene View editing** | Scrub the fit, isolate pieces, sculpt, smooth, move vertex patches, straighten spans and undo. |
-| 🛟 **Non-destructive** | Results are saved as separate mesh assets that keep skinning and existing shapes. **Restore** removes generated shapes. |
-| 🔗 **Modular Avatar** | Optional slider sync. It also works without Modular Avatar; you set the garment slider yourself. |
+| **Fabric transfer** | A custom solver in which fitted cloth follows the body, while loose cloth hangs and spans gaps. |
+| **Layered clothing** | Fits several garments together and checks for cloth-to-cloth and cloth-to-body intersections. |
+| **Multi-frame shapes** | Preserves the positive in-between frames of the source blendshape. |
+| **Scene View editor** | Previews the fit at any weight, with sculpting, smoothing, vertex editing, span straightening and undo. |
+| **Non-destructive output** | Saves separate mesh assets that keep skinning and existing blendshapes. Generated shapes can be removed. |
+| **Modular Avatar support** | Optionally links garment sliders to the body. Modular Avatar is not required. |
 
-## Install
+## Installation
 
-1. Get **ShapeForge.unitypackage** from [Releases](https://github.com/MironescuOctavian/ShapeForge/releases). No release is published yet; until then, follow the [installation and package guide](docs/INSTALLATION.md).
-2. In Unity, choose **Assets → Import Package → Custom Package** and import it.
+1. Download the `.unitypackage` file from [Releases](https://github.com/MironescuOctavian/ShapeForge/releases).
+2. In Unity, choose **Assets → Import Package → Custom Package** and import the file.
 3. Open **Tools → ShapeForge → Blendshape Generator**.
 
-## Quick start
+To build the package from source, see the [installation and release guide](docs/INSTALLATION.md).
 
-1. **Pick** the **Body Mesh**, the **Outfit** and the **Source Shape**. You can drag in one garment, or the parent of several pieces.
-2. **Check** the pieces you want fitted.
-3. Click **Edit** to inspect the fit at **0**, **50** and **100**, or go straight to step 4.
-4. Click **Generate**. Done.
+## Usage
+
+1. Select the **Body Mesh**, the **Outfit** and the **Source Shape**. The outfit can be a single garment or the parent of several.
+2. Check the garments to include.
+3. Click **Edit** to review the fit at weights **0**, **50** and **100**. This step is optional.
+4. Click **Generate**.
 
 <details>
-<summary><b>Editing controls</b></summary>
+<summary><b>Editor controls</b></summary>
 <br>
 
-- In the Scene View, look for **ShapeForge Edit Mode**. Editing starts on **All Cloth**; choose a piece from the cloth list, or use **Select Cloth**, to narrow it down.
-- **Back** and **Resume Edit** switch views while keeping your draft.
-- **Vertex Control** (<kbd>B</kbd>): click or box-select vertices, then drag the **Move** handle. <kbd>Shift</kbd> adds and <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> subtracts. **Show all vertices** is optional.
-- **Straighten Span:** click one attachment, the middle of the strip, then the other attachment. Adjust **Strip half-width** and **Span strength** before applying.
-- **Brushes:** <kbd>Shift</kbd> + scroll changes the size, and <kbd>Esc</kbd> cancels a stroke.
-- **End Edit** closes a clean draft. With unsaved corrections, choose **Save Corrections** or **Discard**.
+- The Scene View shows **ShapeForge Edit Mode** while editing. Editing starts on **All Cloth**. To work on one garment, pick it from the cloth list or use **Select Cloth**.
+- **Back** and **Resume Edit** switch views without discarding the draft.
+- **Vertex Control** (<kbd>B</kbd>): click or box-select vertices, then drag the **Move** handle. <kbd>Shift</kbd> adds to the selection and <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> subtracts from it.
+- **Straighten Span:** click one attachment point, the middle of the strip, then the other attachment point. Adjust **Strip half-width** and **Span strength** before applying.
+- **Brushes:** <kbd>Shift</kbd> + scroll changes the size. <kbd>Esc</kbd> cancels a stroke.
+- **End Edit** closes a draft with no pending changes. Otherwise, choose **Save Corrections** or **Discard**.
 
 </details>
 
 ## How it works
 
-<img src="docs/images/pipeline.svg" alt="Fabric transfer: read the body, let fabric hang, solve the garment as one piece, keep it outside the body" width="100%">
+<img src="docs/images/pipeline.svg" alt="Fabric transfer in four steps: read the body, let fabric hang, solve the garment as one piece, keep it outside the body" width="100%">
 
-**Fabric** is the default. The classic **Barycentric**, **Weighted** and **RBF** transfers are still under **Advanced**, so you can compare them in Edit.
+The Fabric solver treats each garment as a connected surface instead of moving every vertex on its own:
 
-## Accuracy
+- **Distance-aware sampling.** Body motion is smoothed according to how far each part of the garment sits from the surface.
+- **Whole-garment solve.** A sparse linear system with area-weighted terms, solved by conjugate gradients, keeps stiffness consistent across dense and low-polygon meshes.
+- **Geometric constraints.** Unsupported straight sections follow their end points, small closed parts stay rigid, and cloth that would end up inside the body is pushed out and solved again.
 
-Some outfits already ship with a body shape their creator made by hand. That makes a useful test: remove the creator's shape, let ShapeForge rebuild it, and compare the two. **Higher is closer to the creator.**
+The classic **Barycentric**, **Weighted** and **RBF** (radial basis function) transfers remain available under **Advanced** for comparison.
 
-| Chest shape tested | Previous solver | **Fabric** |
+## Evaluation
+
+Some garments ship with a blendshape that their creator sculpted by hand. These serve as reference data: the creator's shape is removed, ShapeForge regenerates it, and the two results are compared vertex by vertex. A higher score means a closer match.
+
+| Test set | Previous solver | Fabric solver |
 |---|:---:|:---:|
-| No-bra, small *(used for tuning)* | 48.6% | **61.3%** |
-| No-bra, large | 55.7% | **57.1%** |
-| With bra, normal | 55.9% | **61.4%** |
-| With bra, big | 34.6% | **40.0%** |
-| Flat | 79.5% | **84.7%** |
+| Shape used for tuning | 48.6% | **61.3%** |
+| Held-out shape A | 55.7% | **57.1%** |
+| Held-out shape B | 55.9% | **61.4%** |
+| Held-out shape C | 34.6% | **40.0%** |
+| Held-out shape D (8 meshes) | 79.5% | **84.7%** |
 
-On the shape used for tuning, the number of vertices ending up inside the body at full weight fell from **775 to 311**.
+On the tuning shape, the number of vertices ending up inside the body at full weight fell from **775 to 311**.
 
 > [!NOTE]
-> These results come from outfits for **one avatar**, and the Flat row covers only 8 pieces. The score measures how closely each vertex's movement matches the creator's, so 100% would mean an identical shape. It isn't a pass rate. Results vary by outfit, so always check the fit.
+> All reference data comes from clothing made for **one character model**, so results on other models are not yet measured. The score reflects how closely per-vertex motion matches the reference. It is not a pass rate.
 
 ## Compatibility
 
-| | |
+| Component | Details |
 |---|---|
 | **Unity** | Unity 6, developed and validated on 6000.0.67f1. Editor only. |
-| **VRChat SDK** | Avatars SDK 3.11.0-beta.1 was used in earlier integration testing. |
-| **Modular Avatar** | Optional. Earlier integration testing used 1.19.0. |
+| **VRChat Avatars SDK** | Optional. Version 3.11.0-beta.1 was used in earlier integration testing. |
+| **Modular Avatar** | Optional. Version 1.19.0 was used in earlier integration testing. |
 
 ## Limitations
 
-- Garments must be made for the same avatar. ShapeForge doesn't convert outfits between avatars.
-- Tight cups, straps and stacked panels can still intersect. The clipping check flags suspect contacts, but it can't cover every animation pose.
-- Negative authored frame weights aren't supported.
-- Layered outfits and extra source frames take longer to generate.
+- Clothing must be made for the same character model. ShapeForge does not refit clothing between different models.
+- Tightly fitted areas, thin straps and stacked layers can still intersect. The clipping check flags likely problems but cannot cover every animation pose.
+- Source blendshapes with negative frame weights are not supported.
+- Layered clothing and multi-frame shapes take longer to generate.
 
 ## Development
 
-Work on `main` and follow [AGENTS.md](AGENTS.md). Run the [Unity smoke test](docs/INSTALLATION.md#clean-project-check). See the [changelog](CHANGELOG.md) and the [release-readiness report](docs/SHAPEFORGE_RELEASE_READINESS.md).
+The editor tool is written in C# and lives in [`Assets/ShapeForge`](Assets/ShapeForge). Automated checks and evaluation tools are in [`Validation`](Validation). See the [changelog](CHANGELOG.md) for the release history.
 
-**Reporting a bug?** Include your Unity and SDK versions, the blendshape weights, the transfer method, and a reproduction you're allowed to share.
+**Reporting an issue:** include your Unity version, package versions, blendshape weights, the transfer method and, if you are permitted to share one, a reproduction.
 
 ---
 

@@ -36,3 +36,8 @@ Thumbs.db
 
 # Unity writes these when Validation is linked into a bench project.
 /Validation/*.meta
+
+# Internal working notes and old captures stay on the local machine.
+/docs/SHAPEFORGE_*.md
+/docs/images/README.md
+/docs/images/*.png

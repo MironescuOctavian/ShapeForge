@@ -117,7 +117,7 @@ namespace ShapeForge
 
         private void ClearBodyAsOutfit()
         {
-            if (outfitRoot && (GeneratorAssets.IsBodyName(outfitRoot.name) || (manualBody && manualBody.gameObject == outfitRoot)))
+            if (outfitRoot && (GeneratorAssets.IsBodyRenderer(outfitRoot.GetComponent<SkinnedMeshRenderer>()) || (manualBody && manualBody.gameObject == outfitRoot)))
             {
                 outfitRoot = null;
                 outfitInstanceId = 0;
@@ -550,7 +550,7 @@ namespace ShapeForge
                 }
             }
 
-            pieces = renderers.Where(r => r != body && !GeneratorAssets.IsBodyName(r.name))
+            pieces = renderers.Where(r => r != body && !GeneratorAssets.IsBodyRenderer(r))
                 .Select(r => new Piece(r, body, avatarRoot, overlapsRegion, sourceShapeName, sourceAvailable))
                 .OrderBy(piece => piece.OutsideRegion)
                 .ToArray();

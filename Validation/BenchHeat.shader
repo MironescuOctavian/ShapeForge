@@ -1,4 +1,4 @@
-// Development only. Flat-lit vertex color for ChestBench renders.
+// Development only. Flat-lit vertex color for ReferenceBench renders.
 Shader "Hidden/ShapeForgeBenchHeat"
 {
     Properties { _Color ("Color", Color) = (1,1,1,1) }

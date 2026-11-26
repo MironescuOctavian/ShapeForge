@@ -25,11 +25,11 @@ public static class BenchExport
 
     public static void Run()
     {
-        string shape = Argument("-benchShape") ?? "(No bra)Breasts_Small";
+        string shape = Argument("-benchShape") ?? throw new Exception("Pass -benchShape with the body shape to test.");
         string folder = Argument("-benchOut") ?? Path.GetFullPath("Export");
         Directory.CreateDirectory(folder);
         string solver = Argument("-benchSolver");
-        if (!string.IsNullOrEmpty(solver)) ChestBench.SelectSolver(solver);
+        if (!string.IsNullOrEmpty(solver)) ReferenceBench.SelectSolver(solver);
         string set = Argument("-benchParams");
         if (!string.IsNullOrEmpty(set))
             foreach (var pair in set.Split(','))
@@ -63,7 +63,7 @@ public static class BenchExport
                 {
                     var mesh = renderer.sharedMesh;
                     if (!mesh || mesh.GetBlendShapeIndex(shape) < 0) continue;
-                    if (mesh.vertexCount == body.sharedMesh.vertexCount || GeneratorAssets.IsBodyName(renderer.name)) continue;
+                    if (mesh.vertexCount == body.sharedMesh.vertexCount || GeneratorAssets.IsBodyRenderer(renderer)) continue;
                     var authored = ShapeTransfer.ReadSourceDeltas(mesh, shape);
                     if (authored.Max(d => d.magnitude) < 1e-5f) continue;
                     var copy = UnityEngine.Object.Instantiate(mesh);
@@ -72,7 +72,7 @@ public static class BenchExport
                     pieces.Add((renderer, authored));
                 }
                 if (pieces.Count == 0) continue;
-                var fit = new LayerFit(body, pieces.Select(p => p.Renderer).ToArray(), shape, ChestBench.Method);
+                var fit = new LayerFit(body, pieces.Select(p => p.Renderer).ToArray(), shape, ReferenceBench.Method);
                 foreach (var (renderer, authored) in pieces)
                 {
                     Vector3[] generated;

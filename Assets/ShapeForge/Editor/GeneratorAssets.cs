@@ -37,7 +37,7 @@ namespace ShapeForge
                 ? scope.GetComponentsInChildren<SkinnedMeshRenderer>(false)
                 : StageUtility.GetCurrentStageHandle().FindComponentsOfType<SkinnedMeshRenderer>();
 
-            // A renderer with a known body name wins. Otherwise accept the renderer carrying clearly
+            // A renderer recognised as a body by name and shape count wins. Otherwise accept the renderer carrying clearly
             // the most blendshapes, which is the body on a typical avatar.
             SkinnedMeshRenderer named = null, richest = null;
             bool ambiguousName = false;
@@ -49,7 +49,7 @@ namespace ShapeForge
                     continue;
                 if (scope && AvatarRoot(renderer) != root)
                     continue;
-                if (IsBodyName(renderer.name))
+                if (IsBodyRenderer(renderer))
                 {
                     ambiguousName |= named;
                     named = renderer;
@@ -63,12 +63,12 @@ namespace ShapeForge
             return most >= FallbackBodyShapeCount && most >= second * 2 ? richest : null;
         }
 
-        // Names of body renderers recognised without further evidence.
-        private static readonly string[] BodyNames = { "Milltina_body" };
         private const int FallbackBodyShapeCount = 20;
 
-        internal static bool IsBodyName(string name) =>
-            Array.Exists(BodyNames, body => string.Equals(body, name, StringComparison.OrdinalIgnoreCase));
+        // A mesh named like "Avatar_body" with many blendshapes is recognised as the avatar body without further evidence.
+        internal static bool IsBodyRenderer(SkinnedMeshRenderer renderer) =>
+            renderer && renderer.sharedMesh && renderer.sharedMesh.blendShapeCount >= FallbackBodyShapeCount &&
+            renderer.name.EndsWith("_body", StringComparison.OrdinalIgnoreCase);
 
         internal static string Validate(SkinnedMeshRenderer outfit, SkinnedMeshRenderer body, Transform root, string shape)
         {

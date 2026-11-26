@@ -6,7 +6,7 @@ namespace ShapeForge
 {
     // Settings of the Fabric transfer. Lengths are millimeters on a 1.4 m avatar; each body converts them with its own
     // size, so a scaled or differently sized avatar behaves the same. The values were fitted against shapes that outfit
-    // creators made by hand (Validation/ChestBench.cs), which reads and writes these fields by name.
+    // creators made by hand (Validation/ReferenceBench.cs), which reads and writes these fields by name.
     internal static class SolverTuning
     {
         // Cloth stiffness: how far a disagreement between neighboring vertices spreads over the fabric.

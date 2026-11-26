@@ -12,7 +12,7 @@ using UnityEngine;
 // body, and the result is compared vertex by vertex. Nothing is saved: meshes are copied in memory.
 //
 // Development only. Put the avatar FBX under Assets/Bench/Body and outfit FBXs made for it under Assets/Bench/Outfits.
-// Batch: -executeMethod ChestBench.Run [-benchShape "No bra"] [-benchFilter text] [-benchCsv path] [-benchSolver name]
+// Batch: -executeMethod ReferenceBench.Run -benchShape name [-benchFilter text] [-benchCsv path] [-benchSolver name]
 //
 // Per piece:
 //   accuracy  1 - mean error / mean authored motion over the region either one moves. 100% matches the creator,
@@ -21,7 +21,7 @@ using UnityEngine;
 //   pen       vertices outside the rest body that end up more than 0.5 mm inside the moved body, at 50 and 100,
 //             for the generated shape and for the creator's own shape.
 //   rough     p95 of a vertex's motion minus its neighbors' mean motion, in mm. Measures crumpling.
-public static class ChestBench
+public static class ReferenceBench
 {
     private const string BodyFolder = "Assets/Bench/Body";
     private const string OutfitFolder = "Assets/Bench/Outfits";
@@ -61,13 +61,13 @@ public static class ChestBench
 
     public static void Run()
     {
-        string shape = Argument("-benchShape") ?? "No bra";
+        string shape = Argument("-benchShape") ?? throw new Exception("Pass -benchShape with the body shape to test.");
         string filter = Argument("-benchFilter");
         string csv = Argument("-benchCsv");
         string solver = Argument("-benchSolver");
         if (!string.IsNullOrEmpty(solver)) SelectSolver(solver);
 
-        var report = new StringBuilder($"SHAPEFORGE CHEST BENCH shape \"{shape}\" solver {SolverName()}\n");
+        var report = new StringBuilder($"SHAPEFORGE REFERENCE BENCH shape \"{shape}\" solver {SolverName()}\n");
         var bodyPath = AssetDatabase.FindAssets("t:GameObject", new[] { BodyFolder }).Select(AssetDatabase.GUIDToAssetPath).First();
         var bodyRoot = (GameObject)UnityEngine.Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(bodyPath));
         var body = bodyRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true)
@@ -102,7 +102,7 @@ public static class ChestBench
                     var mesh = renderer.sharedMesh;
                     if (!mesh || mesh.GetBlendShapeIndex(shape) < 0) continue;
                     // Some outfits ship a copy of the body. It is not cloth.
-                    if (mesh.vertexCount == body.sharedMesh.vertexCount || GeneratorAssets.IsBodyName(renderer.name)) continue;
+                    if (mesh.vertexCount == body.sharedMesh.vertexCount || GeneratorAssets.IsBodyRenderer(renderer)) continue;
                     var authored = ShapeTransfer.ReadSourceDeltas(mesh, shape);
                     if (authored.Max(d => d.magnitude) < 1e-5f) continue;
                     var copy = UnityEngine.Object.Instantiate(mesh);
@@ -183,7 +183,7 @@ public static class ChestBench
             File.WriteAllLines(csv, lines);
         }
         }
-        report.AppendLine("SHAPEFORGE CHEST BENCH DONE");
+        report.AppendLine("SHAPEFORGE REFERENCE BENCH DONE");
         Debug.Log(report.ToString());
         UnityEngine.Object.DestroyImmediate(bodyRoot);
     }
@@ -207,10 +207,10 @@ public static class ChestBench
 
     // Renders one outfit at rest, with the creator's shape, with the generated shape, and an error heatmap
     // (blue 0 mm, green 5 mm, red 10 mm or more), from the front and the side.
-    // Batch: -executeMethod ChestBench.Render -benchFilter text [-benchShape name] [-benchSolver name] [-benchParams set] [-benchOut folder]
+    // Batch: -executeMethod ReferenceBench.Render -benchFilter text [-benchShape name] [-benchSolver name] [-benchParams set] [-benchOut folder]
     public static void Render()
     {
-        string shape = Argument("-benchShape") ?? "(No bra)Breasts_Small";
+        string shape = Argument("-benchShape") ?? throw new Exception("Pass -benchShape with the body shape to test.");
         string filter = Argument("-benchFilter") ?? throw new Exception("Pass -benchFilter with part of an outfit name.");
         string folder = Argument("-benchOut") ?? Path.GetFullPath("Renders");
         string solver = Argument("-benchSolver");
@@ -354,7 +354,7 @@ public static class ChestBench
         }
     }
 
-    // Lists every shape on the body and the chest shapes on each outfit, with the largest motion in mm.
+    // Lists every shape on the body and on each outfit, with the largest motion in mm.
     public static void Dump()
     {
         var report = new StringBuilder("SHAPEFORGE BENCH SHAPES\n");
@@ -369,7 +369,6 @@ public static class ChestBench
                 if (!mesh) continue;
                 float scale = renderer.transform.lossyScale.x * 1000;
                 var shapes = Enumerable.Range(0, mesh.blendShapeCount).Select(mesh.GetBlendShapeName)
-                    .Where(n => isBody || n.IndexOf("bra", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("breast", StringComparison.OrdinalIgnoreCase) >= 0)
                     .Select(n => $"{n} [{ShapeTransfer.ReadSourceDeltas(mesh, n).Max(d => d.magnitude) * scale:F1}mm x{mesh.GetBlendShapeFrameCount(mesh.GetBlendShapeIndex(n))}]");
                 report.AppendLine($"  {renderer.name} ({mesh.vertexCount} v): " + string.Join(" | ", shapes));
             }
