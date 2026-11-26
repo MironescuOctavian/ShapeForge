@@ -4,10 +4,10 @@
 
 <br>
 
-![Unity 6](https://img.shields.io/badge/Unity-6-171614?logo=unity&logoColor=white)
-![VRChat avatars](https://img.shields.io/badge/VRChat-avatars-171614)
-![Editor only](https://img.shields.io/badge/runs-in%20the%20Editor-171614)
-[![MIT license](https://img.shields.io/badge/license-MIT-f4c267)](LICENSE)
+![Unity 6](docs/images/badges/unity.svg)
+![VRChat avatars](docs/images/badges/vrchat.svg)
+![Editor only](docs/images/badges/editor.svg)
+[![MIT license](docs/images/badges/license.svg)](LICENSE)
 
 **Your avatar has a body shape. Your outfit doesn't. ShapeForge makes it.**
 
